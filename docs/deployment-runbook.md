@@ -7,7 +7,7 @@
 - Dokploy source: GitHub HTTPS URL `https://github.com/grupomistico/ritwal-precompro-agentic-api.git`.
 - Branch: `main`.
 - Build: Nixpacks.
-- Public API: `https://ritwal-precompro-api.grupomistico.cloud`.
+- Public API: `https://ritwal-precompro-api-261cd9-2-24-77-242.sslip.io`.
 
 ## Deploy Flow
 
@@ -36,12 +36,12 @@ Root SSH and password auth should remain disabled.
 ## Smoke Tests
 
 ```sh
-curl https://ritwal-precompro-api.grupomistico.cloud/health
+curl https://ritwal-precompro-api-261cd9-2-24-77-242.sslip.io/health
 ```
 
 Authenticated tool checks require `TOOL_SECRET`:
 
 ```sh
 curl -H "x-tool-secret: $TOOL_SECRET" \
-  https://ritwal-precompro-api.grupomistico.cloud/tools/schema
+  https://ritwal-precompro-api-261cd9-2-24-77-242.sslip.io/tools/schema
 ```

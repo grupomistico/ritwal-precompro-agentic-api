@@ -2,7 +2,7 @@
 import "dotenv/config";
 import { spawnSync } from "node:child_process";
 
-const applicationId = process.env.DOKPLOY_APPLICATION_ID || "RgecIhLGmG5RfsVQ-9J3q";
+const applicationId = process.env.DOKPLOY_APPLICATION_ID || "FFR0FNIFiNvdEKv7cpq-a";
 const dokployBaseUrl = process.env.DOKPLOY_BASE_URL || "https://grupomistico.cloud/api";
 const apiKey = process.env.DOKPLOY_API_KEY;
 
