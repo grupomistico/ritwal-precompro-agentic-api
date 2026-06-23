@@ -299,6 +299,120 @@ Output:
 For comparisons, call this endpoint once per range and compare the returned
 `summary` values. Keep each range to 31 days or less.
 
+### `POST /tools/customers/segment`
+
+Internal-only customer segmentation endpoint. It scans Precompro reservations by
+date range, deduplicates contacts by phone/email/document/name, derives customer
+metrics and preferences, and returns JSON or CSV. This endpoint returns PII and
+is intended only for the internal/admin agent.
+
+Input for customers who reserved and cancelled:
+
+```json
+{
+  "from": "2026-06-01",
+  "to": "2026-06-30",
+  "criteria": {
+    "minCancelledReservations": 1
+  },
+  "includeReservations": true,
+  "outputFormat": "json",
+  "limit": 100
+}
+```
+
+Input for customers with more than 10 reservations in the last month:
+
+```json
+{
+  "from": "2026-05-23",
+  "to": "2026-06-23",
+  "criteria": {
+    "minTotalReservations": 11
+  },
+  "outputFormat": "csv",
+  "limit": 5000
+}
+```
+
+Response shape:
+
+```json
+{
+  "ok": true,
+  "code": "CUSTOMER_SEGMENT_READY",
+  "internalOnly": true,
+  "pii": true,
+  "query": {},
+  "scanned": {
+    "daysCount": 30,
+    "reservationsCount": 1200,
+    "customerCount": 800
+  },
+  "pagination": {
+    "totalCustomers": 80,
+    "returnedCustomers": 100,
+    "nextCursor": "100"
+  },
+  "customers": [
+    {
+      "contact": {
+        "displayName": "Maria Perez",
+        "phone": "573001112233",
+        "email": "maria@example.com",
+        "marketingConsent": "assumed_opt_in_precompro",
+        "marketingEligible": true
+      },
+      "metrics": {
+        "totalReservations": 12,
+        "completedReservations": 9,
+        "cancelledReservations": 2,
+        "noShowReservations": 1,
+        "completedPeople": 28,
+        "cancellationRate": 0.1667
+      },
+      "preferences": {
+        "topWeekdays": [],
+        "topHours": [],
+        "topSections": []
+      }
+    }
+  ]
+}
+```
+
+Supported criteria include reservation counts, people counts, rates, phone/email
+presence, cancellation/no-show/completed flags, date recency, section/table,
+source/provider, reservation hour, weekday, party bucket, occasion, preferred
+zone, name text and comments text.
+
+Ranges have no hard day limit. Results are paginated with `limit` and
+`pagination.nextCursor`.
+
+### `POST /tools/customers/lookup`
+
+Internal-only lookup by phone, email or name. If `from` and `to` are supplied it
+returns historical customer metrics for that range; otherwise it scans a recent
+default window.
+
+Input:
+
+```json
+{
+  "phone": "+57 300 123 4567",
+  "from": "2026-01-01",
+  "to": "2026-06-23",
+  "includeReservations": true
+}
+```
+
+### `POST /tools/customers/export`
+
+CSV-oriented alias of `customer_segment`. Use this when the internal agent asks
+for "base de datos", "lista" or "CSV" for use in another marketing tool. It
+returns CSV content inside the JSON response as `csv`, plus a suggested
+`filename`.
+
 ### `POST /tools/reservations/update`
 
 Input:

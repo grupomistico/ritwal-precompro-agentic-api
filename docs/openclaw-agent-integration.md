@@ -79,6 +79,9 @@ Registrar estas herramientas HTTP.
 | `list_reservations_by_date` | `POST` | `/tools/reservations/list-date` | Reporte solo lectura de reservas de una fecha. |
 | `list_reservations_range` | `POST` | `/tools/reservations/list-range` | Reporte solo lectura de reservas de un rango. |
 | `reservation_report` | `POST` | `/tools/reservations/report` | Reporte agregado sin nombres ni teléfonos por fecha, hora, estado, zona/sección, mesa, fuente y más. |
+| `customer_lookup` | `POST` | `/tools/customers/lookup` | Buscar clientes internos por teléfono, email o nombre. Devuelve PII. |
+| `customer_segment` | `POST` | `/tools/customers/segment` | Crear segmentos/base de clientes con PII, métricas y preferencias. |
+| `customer_export` | `POST` | `/tools/customers/export` | Exportar segmentos de clientes en CSV para usar en otra herramienta. |
 | `update_reservation` | `POST` | `/tools/reservations/update` | Modificar una reserva activa tras revalidar disponibilidad. |
 | `cancel_reservation` | `POST` | `/tools/reservations/cancel` | Cancelar una reserva. |
 | `confirm_reservation` | `POST` | `/tools/reservations/confirm` | Reconfirmar una reserva existente. Solo para flujos de recordatorio. |
@@ -632,6 +635,115 @@ Comportamiento del agente:
 - Si `sectionName` aparece como `unknown`, explicar que Precompro no devolvió zona limpia para esas reservas.
 - Para "fuente/origen", usar `source` o `provider` solo si vienen distintos de `unknown`.
 
+### `customer_segment`
+
+Usar solo para el agente interno/admin cuando pidan datos de clientes, bases o insumos para marketing. Esta herramienta devuelve PII.
+
+Casos típicos:
+
+- "Todos los clientes que reservaron y cancelaron."
+- "Clientes con más de 10 reservas el último mes."
+- "Clientes con no-shows."
+- "Clientes frecuentes de Wine Garden."
+- "Base CSV de clientes con email."
+
+Request:
+
+```http
+POST /tools/customers/segment
+```
+
+Clientes que reservaron y cancelaron:
+
+```json
+{
+  "from": "2026-06-01",
+  "to": "2026-06-30",
+  "criteria": {
+    "minCancelledReservations": 1
+  },
+  "includeReservations": true,
+  "outputFormat": "json",
+  "limit": 100
+}
+```
+
+Clientes con más de 10 reservas en el último mes:
+
+```json
+{
+  "from": "2026-05-23",
+  "to": "2026-06-23",
+  "criteria": {
+    "minTotalReservations": 11
+  },
+  "outputFormat": "json",
+  "limit": 100
+}
+```
+
+Export CSV:
+
+```json
+{
+  "from": "2026-05-23",
+  "to": "2026-06-23",
+  "criteria": {
+    "minTotalReservations": 11
+  },
+  "outputFormat": "csv",
+  "limit": 5000
+}
+```
+
+Campos clave de respuesta:
+
+- `contact`: nombre, teléfonos, emails, documento, país y consentimiento asumido desde Precompro.
+- `metrics`: reservas totales, finalizadas, canceladas, no-show, personas y tasas.
+- `preferences`: días, horas, zonas/secciones, mesas, buckets de grupo, fuentes y ocasiones más frecuentes.
+- `reservations`: historial resumido si `includeReservations=true`.
+- `pagination.nextCursor`: usarlo para pedir la siguiente página.
+
+Comportamiento del agente:
+
+- No enviar campañas desde esta API. Solo entregar datos o CSV para que Ritwal lo use en otra herramienta.
+- Si el usuario pide "base de datos", usar `customer_export` o `customer_segment` con `outputFormat="csv"`.
+- Si pide "todos", usar páginas: `limit=5000` y repetir con `cursor=nextCursor`.
+- Para "cancelaron", usar `criteria.minCancelledReservations=1`.
+- Para "más de 10 reservas", usar `criteria.minTotalReservations=11`.
+- Para "último mes", calcular fechas exactas en `America/Bogota`.
+
+### `customer_lookup`
+
+Usar para buscar un cliente o grupo pequeño por teléfono, email o nombre.
+
+Request:
+
+```http
+POST /tools/customers/lookup
+```
+
+Input:
+
+```json
+{
+  "phone": "+57 300 123 4567",
+  "from": "2026-01-01",
+  "to": "2026-06-23",
+  "includeReservations": true
+}
+```
+
+### `customer_export`
+
+Alias orientado a CSV de `customer_segment`.
+
+Request:
+
+```http
+POST /tools/customers/export
+```
+
 ### `update_reservation`
 
 Usar cuando el cliente quiera cambiar fecha, hora, número de personas, nombre, teléfono, correo o notas.
@@ -753,6 +865,7 @@ Antes de decir que un horario está disponible, llama check_availability.
 Antes de crear una reserva, reúne nombre, teléfono, fecha, hora exacta y número de personas, confirma con el cliente y llama create_reservation.
 Antes de modificar o cancelar, busca la reserva por teléfono con search_reservations. Si hay varias, pide al cliente elegir por fecha y hora.
 Para preguntas internas de reportes, reservas pasadas, conteos por fecha o "personas que trajo", calcula el rango exacto en America/Bogota. Usa list_reservations_by_date para una fecha, list_reservations_range para un rango simple y reservation_report para desgloses por hora, zona, mesa, estado, fuente, rankings o comparativos. Usa activeReservations para reservas no canceladas y completedPeople para personas que realmente llegaron; no cuentes No Llego como asistencia.
+Para preguntas internas de clientes, bases de datos, nombres, teléfonos, correos o segmentos de marketing, usa customer_lookup, customer_segment o customer_export. Estas herramientas solo preparan datos; no envían campañas ni mensajes.
 
 No menciones Precompro, middleware, API, errores técnicos, status codes ni tokens al cliente.
 Si una herramienta falla o tarda, responde de forma humana: "Déjame validarlo con el equipo de Ritwal y te confirmamos en un momento." Luego escala a humano.
@@ -833,6 +946,16 @@ Mantén el tono cálido, claro y conciso. Confirma siempre fecha, hora, número 
 5. Responder desde `summary` para totales y desde `groups` para desgloses.
 6. Para comparativos, repetir la llamada para cada periodo y comparar las mismas métricas.
 
+### Flujo De Segmentación De Clientes
+
+1. Confirmar que es una solicitud interna/admin.
+2. Calcular `from` y `to` exactos.
+3. Convertir la intención en `criteria`.
+4. Si pide datos en pantalla, llamar `customer_segment` con `outputFormat="json"`.
+5. Si pide base, lista o CSV, llamar `customer_export`.
+6. Si `pagination.nextCursor` viene con valor, avisar que hay más páginas o pedir la siguiente página automáticamente si el usuario pidió "todos".
+7. No intentar enviar campañas desde esta API.
+
 ## Manejo De Errores
 
 | Código/patrón | Respuesta del agente |
@@ -884,6 +1007,24 @@ curl -H "x-tool-secret: $TOOL_SECRET" \
   -H "content-type: application/json" \
   -d '{"from":"2026-06-15","to":"2026-06-19","groupBy":["date","hour","lifecycle"],"includeCancelled":true}' \
   https://ritwal-precompro-api.grupomistico.cloud/tools/reservations/report
+```
+
+Segmento de clientes que cancelaron, con PII:
+
+```sh
+curl -H "x-tool-secret: $TOOL_SECRET" \
+  -H "content-type: application/json" \
+  -d '{"from":"2026-06-01","to":"2026-06-30","criteria":{"minCancelledReservations":1},"includeReservations":true,"limit":100}' \
+  https://ritwal-precompro-api.grupomistico.cloud/tools/customers/segment
+```
+
+Export CSV de clientes frecuentes:
+
+```sh
+curl -H "x-tool-secret: $TOOL_SECRET" \
+  -H "content-type: application/json" \
+  -d '{"from":"2026-05-23","to":"2026-06-23","criteria":{"minTotalReservations":11},"limit":5000}' \
+  https://ritwal-precompro-api.grupomistico.cloud/tools/customers/export
 ```
 
 Diagnóstico:

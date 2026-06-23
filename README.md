@@ -14,6 +14,9 @@ Middleware HTTP para que agentes como OpenClaw consulten y gestionen reservas de
 - `POST /tools/reservations/list-date`: reporte solo lectura de reservas por fecha.
 - `POST /tools/reservations/list-range`: reporte solo lectura de reservas por rango, máximo 31 días.
 - `POST /tools/reservations/report`: reporte agregado sin PII por fecha, hora, estado, zona/sección, mesa, fuente y otras dimensiones.
+- `POST /tools/customers/lookup`: búsqueda interna de clientes por teléfono, email o nombre.
+- `POST /tools/customers/segment`: segmentación interna de clientes con PII para insumos de marketing.
+- `POST /tools/customers/export`: export CSV paginado de segmentos de clientes.
 - `POST /tools/reservations/update`: modifica reserva tras validar disponibilidad.
 - `POST /tools/reservations/cancel`: cancela reserva.
 - `POST /tools/reservations/confirm`: reconfirma reserva.
@@ -68,4 +71,5 @@ También normaliza entradas humanas frecuentes:
 - Escala grupos de 19+ personas.
 - No expone mensajes técnicos de Precompro al agente.
 - Los reportes agregados no exponen nombres ni teléfonos.
+- Las herramientas `/tools/customers/*` sí devuelven PII y son solo para agente interno/admin.
 - `confirm_reservation` queda reservado para recordatorios/reconfirmaciones, no se llama automáticamente después de crear.

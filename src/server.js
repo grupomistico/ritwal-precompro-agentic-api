@@ -5,6 +5,7 @@ import { loadConfig } from "./config.js";
 import { AppError, errorResponse } from "./errors.js";
 import { InMemoryLock, IdempotencyStore } from "./locks.js";
 import { PrecomproClient } from "./precompro/client.js";
+import { CustomerService } from "./services/customers.js";
 import { ReservationService } from "./services/reservations.js";
 import { toolSpecs } from "./tool-specs.js";
 
@@ -22,6 +23,10 @@ export function buildApp(config = loadConfig()) {
     config,
     lock: new InMemoryLock(),
     idempotency: new IdempotencyStore(),
+  });
+  const customerService = new CustomerService({
+    reservationService,
+    config,
   });
 
   app.addHook("preHandler", async (request) => {
@@ -156,6 +161,18 @@ export function buildApp(config = loadConfig()) {
 
   app.post("/tools/reservations/report", async (request) => {
     return reservationService.report(toolPayload(request));
+  });
+
+  app.post("/tools/customers/lookup", async (request) => {
+    return customerService.lookup(toolPayload(request));
+  });
+
+  app.post("/tools/customers/segment", async (request) => {
+    return customerService.segment(toolPayload(request));
+  });
+
+  app.post("/tools/customers/export", async (request) => {
+    return customerService.export(toolPayload(request));
   });
 
   app.post("/tools/reservations/update", async (request) => {
