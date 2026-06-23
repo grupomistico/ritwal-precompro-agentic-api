@@ -137,9 +137,15 @@ Output:
     "date": "2026-06-15",
     "totalReservations": 10,
     "activeReservations": 8,
+    "completedReservations": 7,
+    "noShowReservations": 1,
+    "pendingReservations": 0,
     "cancelledReservations": 2,
     "totalPeople": 34,
     "activePeople": 27,
+    "completedPeople": 24,
+    "noShowPeople": 3,
+    "pendingPeople": 0,
     "cancelledPeople": 7,
     "statusCounts": {}
   },
@@ -147,9 +153,11 @@ Output:
 }
 ```
 
-For operational questions like "cuantas reservas hubo" or "cuantas personas
-trajo", agents should use `activeReservations` and `activePeople` unless the
-user explicitly asks to include cancellations.
+For operational questions like "cuantas reservas hubo", agents should use
+`activeReservations` unless the user explicitly asks to include cancellations.
+For "cuantas personas trajo" or attendance, agents should use
+`completedPeople`; `activePeople` means non-cancelled reservations and can
+include no-shows.
 
 ### `POST /tools/reservations/list-range`
 
@@ -182,9 +190,15 @@ Output:
   "summary": {
     "totalReservations": 42,
     "activeReservations": 35,
+    "completedReservations": 30,
+    "noShowReservations": 5,
+    "pendingReservations": 0,
     "cancelledReservations": 7,
     "totalPeople": 126,
     "activePeople": 103,
+    "completedPeople": 91,
+    "noShowPeople": 12,
+    "pendingPeople": 0,
     "cancelledPeople": 23,
     "statusCounts": {}
   },

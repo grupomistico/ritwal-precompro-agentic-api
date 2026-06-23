@@ -685,6 +685,8 @@ function normalizeSlot(slot) {
 
 function summarizeReservation(reservation) {
   const cancelled = isCancelled(reservation);
+  const noShow = isNoShow(reservation);
+  const completed = isCompleted(reservation);
   return {
     id: reservation.id_reservation || reservation.reservationId,
     displayName: reservation.displayName,
@@ -696,6 +698,8 @@ function summarizeReservation(reservation) {
     status: reservation.status,
     codeStatus: reservation.codeStatus ?? null,
     cancelled,
+    noShow,
+    completed,
     isUserConfirmed: reservation.isUserConfirmed || null,
     tableId: reservation.tableId || reservation.intuiposId || null,
     comments: reservation.comments || reservation.vendorComments || null,
@@ -719,13 +723,34 @@ function isCancelled(reservation) {
   return Boolean(reservation.isCancelled) || reservation.status === "Cancelada";
 }
 
+function isNoShow(reservation) {
+  return normalizeStatusKey(reservation.status).includes("no llego");
+}
+
+function isCompleted(reservation) {
+  return normalizeStatusKey(reservation.status).includes("finalizada");
+}
+
+function normalizeStatusKey(status) {
+  return String(status || "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+}
+
 function summarizeReservationCollection(reservations) {
   const summary = {
     totalReservations: reservations.length,
     activeReservations: 0,
+    completedReservations: 0,
+    noShowReservations: 0,
+    pendingReservations: 0,
     cancelledReservations: 0,
     totalPeople: 0,
     activePeople: 0,
+    completedPeople: 0,
+    noShowPeople: 0,
+    pendingPeople: 0,
     cancelledPeople: 0,
     statusCounts: {},
   };
@@ -738,9 +763,21 @@ function summarizeReservationCollection(reservations) {
     if (reservation.cancelled) {
       summary.cancelledReservations += 1;
       summary.cancelledPeople += people;
+    } else if (reservation.noShow) {
+      summary.activeReservations += 1;
+      summary.noShowReservations += 1;
+      summary.activePeople += people;
+      summary.noShowPeople += people;
+    } else if (reservation.completed) {
+      summary.activeReservations += 1;
+      summary.completedReservations += 1;
+      summary.activePeople += people;
+      summary.completedPeople += people;
     } else {
       summary.activeReservations += 1;
+      summary.pendingReservations += 1;
       summary.activePeople += people;
+      summary.pendingPeople += people;
     }
   }
 

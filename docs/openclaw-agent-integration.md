@@ -398,12 +398,19 @@ Respuesta relevante:
   "summary": {
     "totalReservations": 10,
     "activeReservations": 8,
+    "completedReservations": 7,
+    "noShowReservations": 1,
+    "pendingReservations": 0,
     "cancelledReservations": 2,
     "totalPeople": 34,
     "activePeople": 27,
+    "completedPeople": 24,
+    "noShowPeople": 3,
+    "pendingPeople": 0,
     "cancelledPeople": 7,
     "statusCounts": {
-      "Sin Reconfirmar": 8,
+      "Finalizada": 7,
+      "No Llego": 1,
       "Cancelada": 2
     }
   },
@@ -414,8 +421,10 @@ Respuesta relevante:
 Comportamiento del agente:
 
 - Para "cuántas reservas hubo", responder con `summary.activeReservations`, salvo que pidan incluir canceladas.
-- Para "cuántas personas trajo", responder con `summary.activePeople`.
+- Para "cuántas personas trajo" o asistencia real, responder con `summary.completedPeople`.
+- `summary.activePeople` significa personas en reservas no canceladas e incluye `No Llego`.
 - Si el usuario pregunta por cancelaciones, usar `summary.cancelledReservations` y `summary.cancelledPeople`.
+- Si el usuario pregunta por no-shows, usar `summary.noShowReservations` y `summary.noShowPeople`.
 - Si necesita auditar, usar el arreglo `reservations`; si solo necesita totales, no listar nombres o teléfonos.
 
 ### `list_reservations_range`
@@ -465,9 +474,15 @@ Respuesta relevante:
   "summary": {
     "totalReservations": 42,
     "activeReservations": 35,
+    "completedReservations": 30,
+    "noShowReservations": 5,
+    "pendingReservations": 0,
     "cancelledReservations": 7,
     "totalPeople": 126,
     "activePeople": 103,
+    "completedPeople": 91,
+    "noShowPeople": 12,
+    "pendingPeople": 0,
     "cancelledPeople": 23
   },
   "days": [
@@ -475,7 +490,9 @@ Respuesta relevante:
       "date": "2026-06-15",
       "summary": {
         "activeReservations": 8,
-        "activePeople": 27
+        "completedReservations": 7,
+        "activePeople": 27,
+        "completedPeople": 24
       }
     }
   ]
@@ -485,7 +502,9 @@ Respuesta relevante:
 Comportamiento del agente:
 
 - Convertir frases relativas a fechas exactas en `America/Bogota` antes de llamar. Ejemplo: si hoy es 2026-06-23, "semana pasada de lunes a viernes" es `from=2026-06-15`, `to=2026-06-19`.
-- Para respuestas de asistencia usar `summary.activeReservations` y `summary.activePeople`.
+- Para reservas no canceladas usar `summary.activeReservations`.
+- Para asistencia o "personas que trajo" usar `summary.completedPeople`.
+- Para no-shows usar `summary.noShowReservations` y `summary.noShowPeople`.
 - Si el usuario pide desglose diario, leer `days[].summary`.
 - Para reportes livianos usar `includeReservations=false`.
 - El rango máximo es 31 días. Si el usuario pide más, dividir en rangos o pedir acotar.
@@ -610,7 +629,7 @@ Usa las herramientas del middleware para reservas. Nunca inventes disponibilidad
 Antes de decir que un horario está disponible, llama check_availability.
 Antes de crear una reserva, reúne nombre, teléfono, fecha, hora exacta y número de personas, confirma con el cliente y llama create_reservation.
 Antes de modificar o cancelar, busca la reserva por teléfono con search_reservations. Si hay varias, pide al cliente elegir por fecha y hora.
-Para preguntas internas de reportes, reservas pasadas, conteos por fecha o "personas que trajo", calcula el rango exacto en America/Bogota y llama list_reservations_by_date o list_reservations_range. Usa activeReservations y activePeople para no contar canceladas como asistencia.
+Para preguntas internas de reportes, reservas pasadas, conteos por fecha o "personas que trajo", calcula el rango exacto en America/Bogota y llama list_reservations_by_date o list_reservations_range. Usa activeReservations para reservas no canceladas y completedPeople para personas que realmente llegaron; no cuentes No Llego como asistencia.
 
 No menciones Precompro, middleware, API, errores técnicos, status codes ni tokens al cliente.
 Si una herramienta falla o tarda, responde de forma humana: "Déjame validarlo con el equipo de Ritwal y te confirmamos en un momento." Luego escala a humano.
@@ -671,9 +690,10 @@ Mantén el tono cálido, claro y conciso. Confirma siempre fecha, hora, número 
 3. Si es una fecha, llamar `list_reservations_by_date`.
 4. Si es un rango, llamar `list_reservations_range`.
 5. Para "reservas hubo" usar `summary.activeReservations`.
-6. Para "personas trajo" usar `summary.activePeople`.
-7. Si piden canceladas, sumar o mostrar `summary.cancelledReservations` y `summary.cancelledPeople`.
-8. Si piden desglose por día, usar `days[].summary`.
+6. Para "personas trajo" usar `summary.completedPeople`.
+7. Si piden no-shows, sumar o mostrar `summary.noShowReservations` y `summary.noShowPeople`.
+8. Si piden canceladas, sumar o mostrar `summary.cancelledReservations` y `summary.cancelledPeople`.
+9. Si piden desglose por día, usar `days[].summary`.
 
 ## Manejo De Errores
 

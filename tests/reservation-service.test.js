@@ -349,7 +349,12 @@ describe("ReservationService reporting", () => {
           reservationForReport({
             id: "active-1",
             people: 2,
-            status: "Sin Reconfirmar",
+            status: "Finalizada",
+          }),
+          reservationForReport({
+            id: "no-show-1",
+            people: 1,
+            status: "No Llego",
           }),
           reservationForReport({
             id: "cancelled-1",
@@ -370,15 +375,19 @@ describe("ReservationService reporting", () => {
       code: "RESERVATIONS_BY_DATE_FOUND",
       summary: {
         date: "2026-06-15",
-        totalReservations: 2,
-        activeReservations: 1,
+        totalReservations: 3,
+        activeReservations: 2,
+        completedReservations: 1,
+        noShowReservations: 1,
         cancelledReservations: 1,
-        totalPeople: 6,
-        activePeople: 2,
+        totalPeople: 7,
+        activePeople: 3,
+        completedPeople: 2,
+        noShowPeople: 1,
         cancelledPeople: 4,
       },
     });
-    expect(result.reservations).toHaveLength(2);
+    expect(result.reservations).toHaveLength(3);
   });
 
   it("can exclude cancelled reservations from date reports", async () => {
@@ -453,9 +462,13 @@ describe("ReservationService reporting", () => {
       summary: {
         totalReservations: 3,
         activeReservations: 2,
+        completedReservations: 2,
+        noShowReservations: 0,
         cancelledReservations: 1,
         totalPeople: 10,
         activePeople: 7,
+        completedPeople: 7,
+        noShowPeople: 0,
         cancelledPeople: 3,
       },
       days: [
@@ -464,9 +477,13 @@ describe("ReservationService reporting", () => {
           summary: {
             totalReservations: 2,
             activeReservations: 1,
+            completedReservations: 1,
+            noShowReservations: 0,
             cancelledReservations: 1,
             totalPeople: 5,
             activePeople: 2,
+            completedPeople: 2,
+            noShowPeople: 0,
             cancelledPeople: 3,
           },
         },
@@ -475,9 +492,13 @@ describe("ReservationService reporting", () => {
           summary: {
             totalReservations: 1,
             activeReservations: 1,
+            completedReservations: 1,
+            noShowReservations: 0,
             cancelledReservations: 0,
             totalPeople: 5,
             activePeople: 5,
+            completedPeople: 5,
+            noShowPeople: 0,
             cancelledPeople: 0,
           },
         },
@@ -502,7 +523,7 @@ describe("ReservationService reporting", () => {
 function reservationForReport({
   id,
   people,
-  status = "Sin Reconfirmar",
+  status = "Finalizada",
   isCancelled = false,
 }) {
   return {

@@ -118,7 +118,7 @@ export const toolSpecs = [
     method: "POST",
     path: "/tools/reservations/list-date",
     description:
-      "Herramienta solo lectura para listar y resumir reservas de una fecha. Usar activeReservations y activePeople para responder cuantas reservas/personas reales hubo sin contar canceladas.",
+      "Herramienta solo lectura para listar y resumir reservas de una fecha. Usar completedPeople para responder cuantas personas trajo; activePeople significa no canceladas e incluye no-shows.",
     inputSchema: {
       type: "object",
       required: ["date"],
@@ -143,7 +143,7 @@ export const toolSpecs = [
     method: "POST",
     path: "/tools/reservations/list-range",
     description:
-      "Herramienta solo lectura para reportes por rango de fechas, maximo 31 dias. Ideal para preguntas como reservas de lunes a viernes y personas que trajo.",
+      "Herramienta solo lectura para reportes por rango de fechas, maximo 31 dias. Usar completedPeople para personas que trajo; activeReservations para reservas no canceladas.",
     inputSchema: {
       type: "object",
       required: ["from", "to"],
