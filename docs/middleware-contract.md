@@ -20,6 +20,22 @@ Convocore can call tools reliably from chat, WhatsApp or the runtime worker.
 
 ## Endpoints
 
+### `GET /tools/restaurant/profile`
+
+Read-only restaurant profile endpoint. Use it when the agent needs the current
+restaurant/vendor data, configured sections/zones or a fresh reference before
+checking availability.
+
+Response shape:
+
+```json
+{
+  "ok": true,
+  "vendor": {},
+  "sections": []
+}
+```
+
 ### `POST /tools/availability`
 
 Input:
