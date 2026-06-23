@@ -36,8 +36,11 @@ export const toolSpecs = [
           description: "Cantidad de personas. Puede llegar como numero o texto numerico.",
         },
         zone: {
-          type: "object",
+          type: ["object", "string", "number"],
           additionalProperties: false,
+          minimum: 0,
+          description:
+            "Zona opcional. Puede ser nombre como Salon/Templos/Wine Garden, id numerico o { id, name }. Usar 0 u omitir para sin zona especifica.",
           properties: {
             id: { type: "integer" },
             name: { type: "string" },
@@ -77,8 +80,11 @@ export const toolSpecs = [
           description: "Cantidad de personas. Puede llegar como numero o texto numerico.",
         },
         zone: {
-          type: "object",
+          type: ["object", "string", "number"],
           additionalProperties: false,
+          minimum: 0,
+          description:
+            "Zona opcional. Puede ser nombre como Salon/Templos/Wine Garden, id numerico o { id, name }. Usar 0 u omitir para sin zona especifica.",
           properties: {
             id: { type: "integer" },
             name: { type: "string" },
@@ -169,6 +175,92 @@ export const toolSpecs = [
           default: true,
           description:
             "Si es false devuelve solo summaries por dia y total; util para reportes sin detalle de cada reserva.",
+        },
+      },
+    },
+  },
+  {
+    name: "reservation_report",
+    method: "POST",
+    path: "/tools/reservations/report",
+    description:
+      "Reporte agregado de reservas sin nombres ni telefonos. Permite agrupar por fecha, dia, hora, estado, ciclo, zona/seccion, mesa, fuente, tipo, pago o usuario interno.",
+    inputSchema: {
+      type: "object",
+      required: ["from", "to"],
+      additionalProperties: false,
+      properties: {
+        from: {
+          type: "string",
+          description: "Fecha inicial en YYYY-MM-DD. El rango es inclusivo.",
+        },
+        to: {
+          type: "string",
+          description: "Fecha final en YYYY-MM-DD. Maximo 31 dias por llamada.",
+        },
+        includeCancelled: {
+          type: ["boolean", "string", "number"],
+          default: true,
+          description:
+            "Si es true incluye canceladas y las separa en summary.cancelledReservations/cancelledPeople.",
+        },
+        groupBy: {
+          type: ["array", "string"],
+          default: ["date"],
+          maxItems: 4,
+          description:
+            "Dimensiones para agrupar. Puede enviarse como array o string separado por comas.",
+          items: {
+            type: "string",
+            enum: [
+              "date",
+              "weekday",
+              "hour",
+              "reservationHour",
+              "status",
+              "lifecycle",
+              "sectionName",
+              "tableName",
+              "partyBucket",
+              "source",
+              "provider",
+              "typeReservation",
+              "paymentType",
+              "createdBy",
+              "finishedBy",
+              "cancelledBy",
+              "noShowBy",
+            ],
+          },
+        },
+        filters: {
+          type: "object",
+          additionalProperties: false,
+          description:
+            "Filtros opcionales. Los valores de texto pueden enviarse como string o array.",
+          properties: {
+            status: { type: ["array", "string"], items: { type: "string" } },
+            lifecycle: {
+              type: ["array", "string"],
+              items: { type: "string", enum: ["completed", "noShow", "cancelled", "pending"] },
+            },
+            sectionName: { type: ["array", "string"], items: { type: "string" } },
+            tableName: { type: ["array", "string"], items: { type: "string" } },
+            source: { type: ["array", "string"], items: { type: "string" } },
+            provider: { type: ["array", "string"], items: { type: "string" } },
+            typeReservation: { type: ["array", "string"], items: { type: "string" } },
+            paymentType: { type: ["array", "string"], items: { type: "string" } },
+            reservationHour: { type: ["array", "string"], items: { type: "string" } },
+            hour: { type: ["array", "string"], items: { type: "string" } },
+            weekday: { type: ["array", "string"], items: { type: "string" } },
+            partyBucket: { type: ["array", "string"], items: { type: "string" } },
+            completed: { type: ["boolean", "string", "number"] },
+            noShow: { type: ["boolean", "string", "number"] },
+            cancelled: { type: ["boolean", "string", "number"] },
+            pending: { type: ["boolean", "string", "number"] },
+            minPartySize: { type: ["integer", "string"], minimum: 1 },
+            maxPartySize: { type: ["integer", "string"], minimum: 1 },
+          },
         },
       },
     },

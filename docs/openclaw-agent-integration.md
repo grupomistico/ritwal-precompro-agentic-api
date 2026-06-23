@@ -78,6 +78,7 @@ Registrar estas herramientas HTTP.
 | `search_reservations` | `POST` | `/tools/reservations/search` | Buscar reservas activas por teléfono. |
 | `list_reservations_by_date` | `POST` | `/tools/reservations/list-date` | Reporte solo lectura de reservas de una fecha. |
 | `list_reservations_range` | `POST` | `/tools/reservations/list-range` | Reporte solo lectura de reservas de un rango. |
+| `reservation_report` | `POST` | `/tools/reservations/report` | Reporte agregado sin nombres ni teléfonos por fecha, hora, estado, zona/sección, mesa, fuente y más. |
 | `update_reservation` | `POST` | `/tools/reservations/update` | Modificar una reserva activa tras revalidar disponibilidad. |
 | `cancel_reservation` | `POST` | `/tools/reservations/cancel` | Cancelar una reserva. |
 | `confirm_reservation` | `POST` | `/tools/reservations/confirm` | Reconfirmar una reserva existente. Solo para flujos de recordatorio. |
@@ -142,6 +143,7 @@ El middleware normaliza:
 | `pasado mañana` | Fecha de pasado mañana |
 | `3pm` | `15:00` |
 | `"5"` | `5` |
+| `zone: 0` | Sin zona específica |
 
 ## Contrato De Respuesta
 
@@ -509,6 +511,127 @@ Comportamiento del agente:
 - Para reportes livianos usar `includeReservations=false`.
 - El rango máximo es 31 días. Si el usuario pide más, dividir en rangos o pedir acotar.
 
+### `reservation_report`
+
+Usar para preguntas internas o gerenciales que pidan agregados, rankings o desglose por dimensión:
+
+- "Reservas por hora de la semana pasada."
+- "Personas que llegaron por zona."
+- "No-shows por día y hora."
+- "Canceladas por mesa o por usuario."
+- "Qué día tuvo más personas finalizadas?"
+
+Request:
+
+```http
+POST /tools/reservations/report
+```
+
+Input:
+
+```json
+{
+  "from": "2026-06-15",
+  "to": "2026-06-19",
+  "includeCancelled": true,
+  "groupBy": ["date", "hour", "lifecycle"],
+  "filters": {
+    "sectionName": "Salón"
+  }
+}
+```
+
+Requeridos:
+
+- `from`
+- `to`
+
+Opcionales:
+
+- `includeCancelled`, por defecto `true`
+- `groupBy`, por defecto `["date"]`, máximo 4 dimensiones
+- `filters`
+
+Dimensiones permitidas en `groupBy`:
+
+```text
+date
+weekday
+hour
+reservationHour
+status
+lifecycle
+sectionName
+tableName
+partyBucket
+source
+provider
+typeReservation
+paymentType
+createdBy
+finishedBy
+cancelledBy
+noShowBy
+```
+
+Filtros principales:
+
+```json
+{
+  "status": "Finalizada",
+  "lifecycle": ["completed", "noShow"],
+  "sectionName": "Salón",
+  "tableName": "Mesa 1",
+  "reservationHour": "20:00",
+  "weekday": "viernes",
+  "partyBucket": "5-8",
+  "completed": true,
+  "noShow": false,
+  "cancelled": false,
+  "minPartySize": 2,
+  "maxPartySize": 8
+}
+```
+
+Respuesta relevante:
+
+```json
+{
+  "ok": true,
+  "code": "RESERVATION_REPORT_READY",
+  "summary": {
+    "activeReservations": 243,
+    "completedReservations": 217,
+    "noShowReservations": 26,
+    "cancelledReservations": 15,
+    "completedPeople": 891,
+    "noShowPeople": 99
+  },
+  "groups": [
+    {
+      "key": {
+        "date": "2026-06-19",
+        "hour": "20:00",
+        "lifecycle": "completed"
+      },
+      "summary": {
+        "completedReservations": 10,
+        "completedPeople": 42
+      }
+    }
+  ],
+  "days": []
+}
+```
+
+Comportamiento del agente:
+
+- Usar esta herramienta cuando el usuario pida "por hora", "por zona", "por mesa", "por estado", "por fuente", "top", "ranking" o "comparar".
+- No esperar nombres ni teléfonos en `reservation_report`; es intencionalmente agregado.
+- Para comparar dos periodos, llamar `reservation_report` una vez por periodo y comparar `summary` o `groups`.
+- Si `sectionName` aparece como `unknown`, explicar que Precompro no devolvió zona limpia para esas reservas.
+- Para "fuente/origen", usar `source` o `provider` solo si vienen distintos de `unknown`.
+
 ### `update_reservation`
 
 Usar cuando el cliente quiera cambiar fecha, hora, número de personas, nombre, teléfono, correo o notas.
@@ -629,7 +752,7 @@ Usa las herramientas del middleware para reservas. Nunca inventes disponibilidad
 Antes de decir que un horario está disponible, llama check_availability.
 Antes de crear una reserva, reúne nombre, teléfono, fecha, hora exacta y número de personas, confirma con el cliente y llama create_reservation.
 Antes de modificar o cancelar, busca la reserva por teléfono con search_reservations. Si hay varias, pide al cliente elegir por fecha y hora.
-Para preguntas internas de reportes, reservas pasadas, conteos por fecha o "personas que trajo", calcula el rango exacto en America/Bogota y llama list_reservations_by_date o list_reservations_range. Usa activeReservations para reservas no canceladas y completedPeople para personas que realmente llegaron; no cuentes No Llego como asistencia.
+Para preguntas internas de reportes, reservas pasadas, conteos por fecha o "personas que trajo", calcula el rango exacto en America/Bogota. Usa list_reservations_by_date para una fecha, list_reservations_range para un rango simple y reservation_report para desgloses por hora, zona, mesa, estado, fuente, rankings o comparativos. Usa activeReservations para reservas no canceladas y completedPeople para personas que realmente llegaron; no cuentes No Llego como asistencia.
 
 No menciones Precompro, middleware, API, errores técnicos, status codes ni tokens al cliente.
 Si una herramienta falla o tarda, responde de forma humana: "Déjame validarlo con el equipo de Ritwal y te confirmamos en un momento." Luego escala a humano.
@@ -687,13 +810,28 @@ Mantén el tono cálido, claro y conciso. Confirma siempre fecha, hora, número 
 
 1. Identificar si el usuario pide una fecha única o un rango.
 2. Convertir frases relativas a fechas exactas en `America/Bogota`.
-3. Si es una fecha, llamar `list_reservations_by_date`.
-4. Si es un rango, llamar `list_reservations_range`.
-5. Para "reservas hubo" usar `summary.activeReservations`.
-6. Para "personas trajo" usar `summary.completedPeople`.
-7. Si piden no-shows, sumar o mostrar `summary.noShowReservations` y `summary.noShowPeople`.
-8. Si piden canceladas, sumar o mostrar `summary.cancelledReservations` y `summary.cancelledPeople`.
-9. Si piden desglose por día, usar `days[].summary`.
+3. Si es una fecha simple, llamar `list_reservations_by_date`.
+4. Si es un rango simple, llamar `list_reservations_range`.
+5. Si pide "por hora", "por zona", "por mesa", "por estado", "top", "ranking" o "comparar", llamar `reservation_report`.
+6. Para "reservas hubo" usar `summary.activeReservations`.
+7. Para "personas trajo" usar `summary.completedPeople`.
+8. Si piden no-shows, sumar o mostrar `summary.noShowReservations` y `summary.noShowPeople`.
+9. Si piden canceladas, sumar o mostrar `summary.cancelledReservations` y `summary.cancelledPeople`.
+10. Si piden desglose por día, usar `days[].summary`.
+
+### Flujo De Reporte Agregado
+
+1. Calcular `from` y `to` exactos.
+2. Elegir `groupBy` según la pregunta:
+   - Por hora: `["hour"]`
+   - Por día y hora: `["date", "hour"]`
+   - Por zona/sección: `["sectionName"]`
+   - Por estado operativo: `["lifecycle"]`
+   - Por mesa: `["tableName"]`
+3. Agregar `filters` si el usuario acota por zona, hora, estado o tamaño de grupo.
+4. Llamar `reservation_report`.
+5. Responder desde `summary` para totales y desde `groups` para desgloses.
+6. Para comparativos, repetir la llamada para cada periodo y comparar las mismas métricas.
 
 ## Manejo De Errores
 
@@ -737,6 +875,15 @@ curl -H "x-tool-secret: $TOOL_SECRET" \
   -H "content-type: application/json" \
   -d '{"from":"2026-06-15","to":"2026-06-19","includeCancelled":true,"includeReservations":false}' \
   https://ritwal-precompro-api.grupomistico.cloud/tools/reservations/list-range
+```
+
+Reporte agregado por hora y estado, sin PII:
+
+```sh
+curl -H "x-tool-secret: $TOOL_SECRET" \
+  -H "content-type: application/json" \
+  -d '{"from":"2026-06-15","to":"2026-06-19","groupBy":["date","hour","lifecycle"],"includeCancelled":true}' \
+  https://ritwal-precompro-api.grupomistico.cloud/tools/reservations/report
 ```
 
 Diagnóstico:

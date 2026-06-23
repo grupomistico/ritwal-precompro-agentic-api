@@ -157,6 +157,28 @@ describe("ReservationService.create", () => {
     });
   });
 
+  it("accepts explicit zone zero as no specific zone", async () => {
+    const result = await service.availability({
+      date: TEST_DATE,
+      partySize: 2,
+      zone: 0,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      code: "AVAILABILITY_FOUND",
+      zone: {
+        id: 0,
+      },
+    });
+    expect(client.getAvailability).toHaveBeenCalledWith({
+      people: 2,
+      date: TEST_DATE,
+      zone: 0,
+      subzone: 0,
+    });
+  });
+
   it("normalizes tool caller strings before checking availability", async () => {
     const result = await service.availability({
       date: TEST_DATE,
@@ -350,6 +372,11 @@ describe("ReservationService reporting", () => {
             id: "active-1",
             people: 2,
             status: "Finalizada",
+            sectionName: "Salón",
+            tableName: "Mesa 1",
+            created_at: "2026-06-10 08:00:00",
+            comments:
+              "Mesa tranquila ALERGIAS: mani. OCASION: cumpleaños. ZONA PREFERIDA: Salón.",
           }),
           reservationForReport({
             id: "no-show-1",
@@ -388,6 +415,21 @@ describe("ReservationService reporting", () => {
       },
     });
     expect(result.reservations).toHaveLength(3);
+    expect(result.reservations[0]).toMatchObject({
+      reservationHour: "12:00",
+      weekday: "lunes",
+      weekdayNumber: 1,
+      partyBucket: "1-2",
+      sectionName: "Salón",
+      tableName: "Mesa 1",
+      createdAt: "2026-06-10 08:00:00",
+      commentsStructured: {
+        notes: "Mesa tranquila",
+        allergies: "mani",
+        occasion: "cumpleaños",
+        preferredZoneName: "Salón",
+      },
+    });
   });
 
   it("can exclude cancelled reservations from date reports", async () => {
@@ -427,15 +469,18 @@ describe("ReservationService reporting", () => {
   it("summarizes reservation ranges even when reservation details are omitted", async () => {
     const byDate = {
       "2026-06-15": [
-        reservationForReport({ id: "d1-active", people: 2 }),
+        reservationForReport({ id: "d1-active", people: 2, date: "2026-06-15" }),
         reservationForReport({
           id: "d1-cancelled",
           people: 3,
+          date: "2026-06-15",
           status: "Cancelada",
           isCancelled: true,
         }),
       ],
-      "2026-06-16": [reservationForReport({ id: "d2-active", people: 5 })],
+      "2026-06-16": [
+        reservationForReport({ id: "d2-active", people: 5, date: "2026-06-16" }),
+      ],
     };
     const client = {
       listReservations: vi.fn(async ({ date }) => ({
@@ -518,6 +563,97 @@ describe("ReservationService reporting", () => {
       statusCode: 400,
     });
   });
+
+  it("builds grouped reports without guest PII", async () => {
+    const byDate = {
+      "2026-06-15": [
+        reservationForReport({
+          id: "d1-completed",
+          people: 2,
+          date: "2026-06-15",
+          status: "Finalizada",
+          sectionName: "Salón",
+        }),
+        reservationForReport({
+          id: "d1-noshow",
+          people: 3,
+          date: "2026-06-15",
+          status: "No Llego",
+          sectionName: "Salón",
+        }),
+        reservationForReport({
+          id: "d1-cancelled",
+          people: 4,
+          date: "2026-06-15",
+          status: "Cancelada",
+          isCancelled: true,
+          sectionName: "Templos",
+        }),
+      ],
+      "2026-06-16": [
+        reservationForReport({
+          id: "d2-completed",
+          people: 5,
+          date: "2026-06-16",
+          status: "Finalizada",
+          sectionName: "WINE GARDEN",
+        }),
+      ],
+    };
+    const client = {
+      listReservations: vi.fn(async ({ date }) => ({
+        ok: true,
+        status: 200,
+        data: byDate[date] || [],
+      })),
+    };
+    const service = buildService(client);
+
+    const result = await service.report({
+      from: "2026-06-15",
+      to: "2026-06-16",
+      groupBy: ["date", "lifecycle"],
+      filters: { sectionName: "Salón" },
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      code: "RESERVATION_REPORT_READY",
+      groupBy: ["date", "lifecycle"],
+      filters: { sectionName: ["Salón"] },
+      summary: {
+        totalReservations: 2,
+        activeReservations: 2,
+        completedReservations: 1,
+        noShowReservations: 1,
+        totalPeople: 5,
+        completedPeople: 2,
+        noShowPeople: 3,
+      },
+    });
+    expect(result.groups).toEqual([
+      {
+        key: { date: "2026-06-15", lifecycle: "completed" },
+        label: "date: 2026-06-15 | lifecycle: completed",
+        summary: expect.objectContaining({
+          totalReservations: 1,
+          completedReservations: 1,
+          completedPeople: 2,
+        }),
+      },
+      {
+        key: { date: "2026-06-15", lifecycle: "noShow" },
+        label: "date: 2026-06-15 | lifecycle: noShow",
+        summary: expect.objectContaining({
+          totalReservations: 1,
+          noShowReservations: 1,
+          noShowPeople: 3,
+        }),
+      },
+    ]);
+    expect(JSON.stringify(result.groups)).not.toContain("Maria Perez");
+    expect(JSON.stringify(result.groups)).not.toContain("3142360112");
+  });
 });
 
 function reservationForReport({
@@ -525,16 +661,21 @@ function reservationForReport({
   people,
   status = "Finalizada",
   isCancelled = false,
+  date = "2026-06-15",
+  time = "12:00",
+  ...overrides
 }) {
+  const dateTime = `${date} ${time}:00`;
   return {
     id_reservation: id,
     displayName: "Maria Perez",
     phone: 3142360112,
     people,
-    date: bogotaDateTimeToEpochMs("2026-06-15", "12:00"),
-    fecha: "2026-06-15",
-    fechaCompleta: "2026-06-15 12:00:00",
+    date: bogotaDateTimeToEpochMs(date, time),
+    fecha: date,
+    fechaCompleta: dateTime,
     status,
     isCancelled,
+    ...overrides,
   };
 }

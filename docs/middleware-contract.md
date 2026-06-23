@@ -43,6 +43,7 @@ Accepted convenience inputs from tool callers:
 - `date`: strict `YYYY-MM-DD`, `hoy`, `mañana`/`manana`, or `pasado mañana`.
 - `time`: strict `HH:mm` or simple AM/PM forms like `3pm`.
 - `partySize`: number or numeric string.
+- `zone`: omit, `0`, a section id, a section name, or `{ "id": 1442, "name": "Salón" }`.
 
 Output:
 
@@ -159,6 +160,20 @@ For "cuantas personas trajo" or attendance, agents should use
 `completedPeople`; `activePeople` means non-cancelled reservations and can
 include no-shows.
 
+Reservation detail rows may include operational fields returned by Precompro,
+normalized for agents:
+
+- Timing: `date`, `dateTime`, `reservationHour`, `weekday`, `weekdayNumber`.
+- Party: `people`, `adult`, `boy`, `baby`, `partyBucket`.
+- Status: `status`, `codeStatus`, `completed`, `noShow`, `cancelled`.
+- Location: `tableId`, `tableName`, `sectionId`, `sectionName`,
+  `subSectionId`, `subSectionName`.
+- Source/payment: `source`, `provider`, `typeReservation`, `paymentType`,
+  `balancePaid`.
+- Audit: `createdAt`, `updatedAt`, `createdBy`, `finishedBy`, `cancelledBy`,
+  `noShowBy`.
+- Notes: `comments`, `commentsStructured`.
+
 ### `POST /tools/reservations/list-range`
 
 Read-only endpoint for date range reports. The range is inclusive and capped at
@@ -214,6 +229,75 @@ Output:
 Agents should calculate relative date phrases, such as "semana pasada de lunes
 a viernes", into exact `YYYY-MM-DD` dates in `America/Bogota` before calling
 this endpoint.
+
+### `POST /tools/reservations/report`
+
+Read-only aggregated reporting endpoint. It returns summaries and grouped
+metrics without guest names or phone numbers. Use this for most internal
+questions that ask "por hora", "por zona", "por estado", "por fuente", "por
+mesa" or "comparar".
+
+Input:
+
+```json
+{
+  "from": "2026-06-15",
+  "to": "2026-06-19",
+  "includeCancelled": true,
+  "groupBy": ["date", "hour", "lifecycle"],
+  "filters": {
+    "sectionName": "Salón",
+    "lifecycle": ["completed", "noShow"]
+  }
+}
+```
+
+Allowed `groupBy` values:
+
+```text
+date, weekday, hour, reservationHour, status, lifecycle, sectionName,
+tableName, partyBucket, source, provider, typeReservation, paymentType,
+createdBy, finishedBy, cancelledBy, noShowBy
+```
+
+Output:
+
+```json
+{
+  "ok": true,
+  "code": "RESERVATION_REPORT_READY",
+  "from": "2026-06-15",
+  "to": "2026-06-19",
+  "groupBy": ["date", "hour"],
+  "summary": {
+    "activeReservations": 243,
+    "completedReservations": 217,
+    "noShowReservations": 26,
+    "cancelledReservations": 15,
+    "completedPeople": 891,
+    "noShowPeople": 99
+  },
+  "groups": [
+    {
+      "key": {
+        "date": "2026-06-19",
+        "hour": "20:00"
+      },
+      "label": "date: 2026-06-19 | hour: 20:00",
+      "summary": {}
+    }
+  ],
+  "days": [
+    {
+      "date": "2026-06-19",
+      "summary": {}
+    }
+  ]
+}
+```
+
+For comparisons, call this endpoint once per range and compare the returned
+`summary` values. Keep each range to 31 days or less.
 
 ### `POST /tools/reservations/update`
 

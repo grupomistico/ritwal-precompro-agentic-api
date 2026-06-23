@@ -10,13 +10,39 @@ import {
   normalizeTimeInput,
 } from "../utils/datetime.js";
 import { normalizeCountryCode, normalizePhone } from "../utils/phone.js";
-import { buildComments } from "../utils/comments.js";
+import { buildComments, parseComments } from "../utils/comments.js";
+
+const REPORT_GROUP_BY_VALUES = [
+  "date",
+  "weekday",
+  "hour",
+  "reservationHour",
+  "status",
+  "lifecycle",
+  "sectionName",
+  "tableName",
+  "partyBucket",
+  "source",
+  "provider",
+  "typeReservation",
+  "paymentType",
+  "createdBy",
+  "finishedBy",
+  "cancelledBy",
+  "noShowBy",
+];
+
+const reportGroupBySchema = z.enum(REPORT_GROUP_BY_VALUES);
+const stringArraySchema = z.preprocess(
+  normalizeStringArrayInput,
+  z.array(z.string()).optional(),
+);
 
 const zoneSchema = z.preprocess(
   normalizeZoneInput,
   z
     .object({
-      id: z.number().int().positive().optional(),
+      id: z.number().int().nonnegative().optional(),
       name: z.string().optional(),
     })
     .optional(),
@@ -67,6 +93,40 @@ export const listReservationsRangeSchema = z.object({
   to: z.preprocess(normalizeDateInput, z.string()),
   includeCancelled: z.preprocess(normalizeBooleanInput, z.boolean()).optional().default(true),
   includeReservations: z.preprocess(normalizeBooleanInput, z.boolean()).optional().default(true),
+});
+
+export const reservationReportSchema = z.object({
+  from: z.preprocess(normalizeDateInput, z.string()),
+  to: z.preprocess(normalizeDateInput, z.string()),
+  includeCancelled: z.preprocess(normalizeBooleanInput, z.boolean()).optional().default(true),
+  groupBy: z
+    .preprocess(normalizeStringArrayInput, z.array(reportGroupBySchema).max(4))
+    .optional()
+    .default(["date"]),
+  filters: z
+    .object({
+      status: stringArraySchema,
+      lifecycle: stringArraySchema,
+      sectionName: stringArraySchema,
+      tableName: stringArraySchema,
+      source: stringArraySchema,
+      provider: stringArraySchema,
+      typeReservation: stringArraySchema,
+      paymentType: stringArraySchema,
+      reservationHour: stringArraySchema,
+      hour: stringArraySchema,
+      weekday: stringArraySchema,
+      partyBucket: stringArraySchema,
+      completed: z.preprocess(normalizeBooleanInput, z.boolean()).optional(),
+      noShow: z.preprocess(normalizeBooleanInput, z.boolean()).optional(),
+      cancelled: z.preprocess(normalizeBooleanInput, z.boolean()).optional(),
+      pending: z.preprocess(normalizeBooleanInput, z.boolean()).optional(),
+      minPartySize: z.coerce.number().int().positive().optional(),
+      maxPartySize: z.coerce.number().int().positive().optional(),
+    })
+    .strict()
+    .optional()
+    .default({}),
 });
 
 export const updateReservationSchema = z.object({
@@ -294,37 +354,8 @@ export class ReservationService {
 
   async listRange(input) {
     const data = listReservationsRangeSchema.parse(input);
-    validateReportDate(data.from);
-    validateReportDate(data.to);
-    if (data.from > data.to) {
-      throw new AppError(
-        "INVALID_DATE_RANGE",
-        "La fecha inicial debe ser menor o igual a la fecha final.",
-        { from: data.from, to: data.to },
-        400,
-      );
-    }
-
-    const dates = datesBetween(data.from, data.to);
-    if (dates.length > 31) {
-      throw new AppError(
-        "DATE_RANGE_TOO_LARGE",
-        "El rango máximo para consultas de reservas es de 31 días.",
-        { from: data.from, to: data.to, days: dates.length },
-        400,
-      );
-    }
-
-    const reportDays = await Promise.all(
-      dates.map(async (date) => {
-        const reservations = await this.getReservationsByDate(date, data.includeCancelled);
-        return {
-          date,
-          summary: summarizeReservationCollection(reservations),
-          reservations,
-        };
-      }),
-    );
+    const dates = validateReportRange(data.from, data.to);
+    const reportDays = await this.getReservationReportDays(dates, data.includeCancelled);
 
     const allReservations = reportDays.flatMap((day) => day.reservations);
     const days = reportDays.map((day) => ({
@@ -346,6 +377,42 @@ export class ReservationService {
       includeReservations: data.includeReservations,
       summary: summarizeReservationCollection(allReservations),
       days,
+    };
+  }
+
+  async report(input) {
+    const data = reservationReportSchema.parse(input);
+    const dates = validateReportRange(data.from, data.to);
+    const reportDays = await this.getReservationReportDays(dates, data.includeCancelled);
+    const filteredDays = reportDays.map((day) => {
+      const reservations = filterReservationsForReport(day.reservations, data.filters);
+      return {
+        date: day.date,
+        summary: summarizeReservationCollection(reservations),
+        reservations,
+      };
+    });
+    const reservations = filteredDays.flatMap((day) => day.reservations);
+    const groups = buildReportGroups(reservations, data.groupBy);
+
+    return {
+      ok: true,
+      code: reservations.length ? "RESERVATION_REPORT_READY" : "NO_RESERVATION_REPORT_DATA",
+      message: reservations.length
+        ? "Reporte de reservas listo."
+        : "No encontré reservas para ese reporte.",
+      from: data.from,
+      to: data.to,
+      daysCount: dates.length,
+      includeCancelled: data.includeCancelled,
+      groupBy: data.groupBy,
+      filters: normalizeReportFiltersForOutput(data.filters),
+      summary: summarizeReservationCollection(reservations),
+      groups,
+      days: filteredDays.map((day) => ({
+        date: day.date,
+        summary: day.summary,
+      })),
     };
   }
 
@@ -531,6 +598,19 @@ export class ReservationService {
       .map(summarizeReservation)
       .filter((reservation) => includeCancelled || !reservation.cancelled);
   }
+
+  async getReservationReportDays(dates, includeCancelled = true) {
+    return Promise.all(
+      dates.map(async (date) => {
+        const reservations = await this.getReservationsByDate(date, includeCancelled);
+        return {
+          date,
+          summary: summarizeReservationCollection(reservations),
+          reservations,
+        };
+      }),
+    );
+  }
 }
 
 function largePartyResult() {
@@ -586,6 +666,30 @@ function validateReportDate(date) {
       400,
     );
   }
+}
+
+function validateReportRange(from, to) {
+  validateReportDate(from);
+  validateReportDate(to);
+  if (from > to) {
+    throw new AppError(
+      "INVALID_DATE_RANGE",
+      "La fecha inicial debe ser menor o igual a la fecha final.",
+      { from, to },
+      400,
+    );
+  }
+
+  const dates = datesBetween(from, to);
+  if (dates.length > 31) {
+    throw new AppError(
+      "DATE_RANGE_TOO_LARGE",
+      "El rango máximo para consultas de reservas es de 31 días.",
+      { from, to, days: dates.length },
+      400,
+    );
+  }
+  return dates;
 }
 
 function validateTime(time) {
@@ -662,6 +766,29 @@ function normalizeBooleanInput(value) {
   return value;
 }
 
+function normalizeStringArrayInput(value) {
+  if (value === undefined || value === null || value === "") return value;
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((item) => normalizeStringArrayInput(item) || [])
+      .filter((item) => typeof item === "string" && item.trim())
+      .map((item) => item.trim());
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    try {
+      return normalizeStringArrayInput(JSON.parse(trimmed));
+    } catch {
+      return trimmed
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+  }
+  return [String(value).trim()].filter(Boolean);
+}
+
 function asArray(data) {
   return Array.isArray(data) ? data : [];
 }
@@ -687,22 +814,56 @@ function summarizeReservation(reservation) {
   const cancelled = isCancelled(reservation);
   const noShow = isNoShow(reservation);
   const completed = isCompleted(reservation);
+  const date = reservation.fecha || reservation.fechaCompleta?.slice(0, 10);
+  const dateTime = reservation.fechaCompleta;
+  const comments = stringOrNull(reservation.comments || reservation.vendorComments);
+  const weekday = weekdayFromIsoDate(date);
   return {
     id: reservation.id_reservation || reservation.reservationId,
     displayName: reservation.displayName,
     phone: String(reservation.phone || ""),
     people: Number(reservation.people),
+    adult: numberOrNull(reservation.adult),
+    boy: numberOrNull(reservation.boy),
+    baby: numberOrNull(reservation.baby),
     dateEpochMs: Number(reservation.date),
-    date: reservation.fecha || reservation.fechaCompleta?.slice(0, 10),
-    dateTime: reservation.fechaCompleta,
+    date,
+    dateTime,
+    reservationHour: dateTime?.slice(11, 16) || null,
+    weekday: weekday?.name || null,
+    weekdayNumber: weekday?.number || null,
+    partyBucket: partyBucket(Number(reservation.people)),
     status: reservation.status,
     codeStatus: reservation.codeStatus ?? null,
     cancelled,
     noShow,
     completed,
     isUserConfirmed: reservation.isUserConfirmed || null,
+    typeReservation: stringOrNull(reservation.typeReservation),
+    source: stringOrNull(
+      reservation.source || reservation.originReservation || reservation.provider,
+    ),
+    provider: stringOrNull(reservation.provider),
+    balancePaid: numberOrNull(reservation.balancePaid),
+    paymentType: stringOrNull(reservation.paymentType),
+    isPaymentLink: numberOrNull(reservation.isPaymentLink),
     tableId: reservation.tableId || reservation.intuiposId || null,
-    comments: reservation.comments || reservation.vendorComments || null,
+    tableName: stringOrNull(reservation.tableName),
+    sectionId: reservation.sectionId || null,
+    sectionName: stringOrNull(reservation.sectionName),
+    subSectionId: reservation.subSectionId || null,
+    subSectionName: stringOrNull(reservation.subSectionName),
+    services: Array.isArray(reservation.services) ? reservation.services : [],
+    createdAt: stringOrNull(reservation.created_at || reservation.createdAt),
+    updatedAt: stringOrNull(reservation.updated_at || reservation.updatedAt),
+    createdBy: stringOrNull(reservation.creadoPor || reservation.createdBy),
+    seatedBy: stringOrNull(reservation.sentadaPor || reservation.seatedBy),
+    confirmedBy: stringOrNull(reservation.confirmadaPor || reservation.confirmedBy),
+    finishedBy: stringOrNull(reservation.finalizadaPor || reservation.finishedBy),
+    cancelledBy: stringOrNull(reservation.canceladaPor || reservation.cancelledBy),
+    noShowBy: stringOrNull(reservation.nollegoPor || reservation.noShowBy),
+    comments,
+    commentsStructured: parseComments(comments),
   };
 }
 
@@ -720,15 +881,21 @@ function summarizeCreatedReservation(reservation, payload = {}) {
 }
 
 function isCancelled(reservation) {
-  return Boolean(reservation.isCancelled) || reservation.status === "Cancelada";
+  return truthyPrecomproFlag(reservation.isCancelled) || reservation.status === "Cancelada";
 }
 
 function isNoShow(reservation) {
-  return normalizeStatusKey(reservation.status).includes("no llego");
+  return (
+    truthyPrecomproFlag(reservation.isNoshow || reservation.isNoShow) ||
+    normalizeStatusKey(reservation.status).includes("no llego")
+  );
 }
 
 function isCompleted(reservation) {
-  return normalizeStatusKey(reservation.status).includes("finalizada");
+  return (
+    truthyPrecomproFlag(reservation.isFinish || reservation.isFinished) ||
+    normalizeStatusKey(reservation.status).includes("finalizada")
+  );
 }
 
 function normalizeStatusKey(status) {
@@ -736,6 +903,43 @@ function normalizeStatusKey(status) {
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "")
     .toLowerCase();
+}
+
+function truthyPrecomproFlag(value) {
+  if (value === true) return true;
+  if (value === false || value === undefined || value === null || value === "") return false;
+  const normalized = String(value).trim().toLowerCase();
+  return ["1", "true", "si", "sí", "yes"].includes(normalized);
+}
+
+function stringOrNull(value) {
+  if (value === undefined || value === null) return null;
+  const text = String(value).trim();
+  return text ? text : null;
+}
+
+function numberOrNull(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function partyBucket(people) {
+  if (!Number.isFinite(people) || people <= 0) return "unknown";
+  if (people <= 2) return "1-2";
+  if (people <= 4) return "3-4";
+  if (people <= 8) return "5-8";
+  return "9+";
+}
+
+function weekdayFromIsoDate(date) {
+  if (!date || !assertIsoDate(date)) return null;
+  const names = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+  const day = parseIsoDateUtc(date).getUTCDay();
+  return {
+    name: names[day],
+    number: day === 0 ? 7 : day,
+  };
 }
 
 function summarizeReservationCollection(reservations) {
@@ -782,6 +986,125 @@ function summarizeReservationCollection(reservations) {
   }
 
   return summary;
+}
+
+function buildReportGroups(reservations, groupBy) {
+  if (!groupBy.length) return [];
+
+  const groups = new Map();
+  for (const reservation of reservations) {
+    const key = Object.fromEntries(
+      groupBy.map((dimension) => [dimension, reportDimensionValue(reservation, dimension)]),
+    );
+    const groupKey = JSON.stringify(key);
+    const existing = groups.get(groupKey) || {
+      key,
+      label: groupBy.map((dimension) => `${dimension}: ${key[dimension]}`).join(" | "),
+      reservations: [],
+    };
+    existing.reservations.push(reservation);
+    groups.set(groupKey, existing);
+  }
+
+  return [...groups.values()]
+    .map((group) => ({
+      key: group.key,
+      label: group.label,
+      summary: summarizeReservationCollection(group.reservations),
+    }))
+    .sort((left, right) => left.label.localeCompare(right.label, "es"));
+}
+
+function reportDimensionValue(reservation, dimension) {
+  if (dimension === "hour" || dimension === "reservationHour") {
+    return reservation.reservationHour || "unknown";
+  }
+  if (dimension === "lifecycle") {
+    return reservationLifecycle(reservation);
+  }
+  if (dimension === "source") {
+    return reservation.source || reservation.provider || "unknown";
+  }
+  const value = reservation[dimension];
+  if (value === undefined || value === null || value === "") return "unknown";
+  return String(value);
+}
+
+function reservationLifecycle(reservation) {
+  if (reservation.cancelled) return "cancelled";
+  if (reservation.noShow) return "noShow";
+  if (reservation.completed) return "completed";
+  return "pending";
+}
+
+function filterReservationsForReport(reservations, filters = {}) {
+  return reservations.filter((reservation) => matchesReportFilters(reservation, filters));
+}
+
+function matchesReportFilters(reservation, filters) {
+  if (!matchesStringFilter(reservation.status, filters.status)) return false;
+  if (!matchesStringFilter(reservationLifecycle(reservation), filters.lifecycle)) return false;
+  if (!matchesStringFilter(reservation.sectionName, filters.sectionName)) return false;
+  if (!matchesStringFilter(reservation.tableName, filters.tableName)) return false;
+  if (!matchesStringFilter(reservation.source || reservation.provider, filters.source)) {
+    return false;
+  }
+  if (!matchesStringFilter(reservation.provider, filters.provider)) return false;
+  if (!matchesStringFilter(reservation.typeReservation, filters.typeReservation)) return false;
+  if (!matchesStringFilter(reservation.paymentType, filters.paymentType)) return false;
+  if (
+    !matchesStringFilter(
+      reservation.reservationHour,
+      filters.reservationHour || filters.hour,
+    )
+  ) {
+    return false;
+  }
+  if (!matchesStringFilter(reservation.weekday, filters.weekday)) return false;
+  if (!matchesStringFilter(reservation.partyBucket, filters.partyBucket)) return false;
+
+  if (filters.completed !== undefined && reservation.completed !== filters.completed) {
+    return false;
+  }
+  if (filters.noShow !== undefined && reservation.noShow !== filters.noShow) return false;
+  if (filters.cancelled !== undefined && reservation.cancelled !== filters.cancelled) {
+    return false;
+  }
+  if (filters.pending !== undefined) {
+    const pending = !reservation.completed && !reservation.noShow && !reservation.cancelled;
+    if (pending !== filters.pending) return false;
+  }
+
+  if (filters.minPartySize !== undefined && reservation.people < filters.minPartySize) {
+    return false;
+  }
+  if (filters.maxPartySize !== undefined && reservation.people > filters.maxPartySize) {
+    return false;
+  }
+  return true;
+}
+
+function matchesStringFilter(value, allowedValues) {
+  if (!allowedValues?.length) return true;
+  const normalizedValue = normalizeComparable(value || "unknown");
+  return allowedValues.some((allowed) => normalizeComparable(allowed) === normalizedValue);
+}
+
+function normalizeComparable(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeReportFiltersForOutput(filters = {}) {
+  return Object.fromEntries(
+    Object.entries(filters).filter(([, value]) => {
+      if (Array.isArray(value)) return value.length > 0;
+      return value !== undefined;
+    }),
+  );
 }
 
 function datesBetween(from, to) {

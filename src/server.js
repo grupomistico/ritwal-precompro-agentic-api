@@ -154,6 +154,10 @@ export function buildApp(config = loadConfig()) {
     return reservationService.listRange(toolPayload(request));
   });
 
+  app.post("/tools/reservations/report", async (request) => {
+    return reservationService.report(toolPayload(request));
+  });
+
   app.post("/tools/reservations/update", async (request) => {
     return reservationService.update(toolPayload(request));
   });
