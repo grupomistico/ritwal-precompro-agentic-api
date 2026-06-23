@@ -24,6 +24,12 @@ La guía completa para conectar un agente OpenClaw está en:
 docs/openclaw-agent-integration.md
 ```
 
+La rotación automática de la API key de Precompro está documentada en:
+
+```text
+docs/precompro-key-refresh.md
+```
+
 ## Agent Auth
 
 Los endpoints `/tools/*` aceptan:
