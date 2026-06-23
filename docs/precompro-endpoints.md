@@ -6,7 +6,7 @@ Environment reviewed from public docs: Production.
 
 Ritwal test credentials currently respond on the hosts without the `2` suffix. The public staging availability host `serviceavailability2.precompro.co` returned a PHP/Composer 500 during testing on 2026-05-05 and again on 2026-05-22.
 
-On 2026-05-22 the previous sandbox key returned `401 Unauthorized` on the same requests that had worked before. A replacement sandbox key restored `vendor`, `sections`, `availability`, and `reservation/list` on the hosts without `2`. If this happens again, first verify the sandbox key before changing Convocore or middleware logic.
+On 2026-05-22 the previous sandbox key returned `401 Unauthorized` on the same requests that had worked before. A replacement sandbox key restored `vendor`, `sections`, `availability`, and `reservation/list` on the hosts without `2`. If this happens again, first verify the sandbox key before changing middleware logic.
 
 Authentication:
 
@@ -63,7 +63,7 @@ Endpoints:
 
 - `GET /refresh`: generate a new API key from the old one. Treat as a sensitive operation.
   - Run intentionally only. It invalidates/rotates the working credential.
-  - After refreshing, update `.env`, deployment secrets, Convocore/middleware secrets, and any password manager entry.
+  - After refreshing, update `.env`, deployment secrets, middleware secrets, and any password manager entry.
 
 Error behavior:
 

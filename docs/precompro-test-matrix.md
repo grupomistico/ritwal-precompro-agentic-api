@@ -1,6 +1,6 @@
 # Precompro Test Matrix For Ritwal
 
-Goal: map the API behavior deeply enough to build a reliable Convocore frontdesk agent.
+Goal: map the API behavior deeply enough to build a reliable agentic frontdesk.
 
 ## Read-only Tests
 

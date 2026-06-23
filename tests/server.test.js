@@ -55,7 +55,7 @@ describe("toolPayload", () => {
     ).toEqual({ date: "2026-05-16", partySize: 5 });
   });
 
-  it("accepts Convocore parameter arrays", () => {
+  it("accepts generic parameter arrays", () => {
     expect(
       toolPayload({
         body: [
@@ -105,7 +105,7 @@ describe("toolPayload", () => {
     ).toEqual({ date: "2026-05-16", partySize: 5 });
   });
 
-  it("unwraps Convocore runtime tool_payload envelopes", () => {
+  it("unwraps generic runtime tool_payload envelopes", () => {
     expect(
       toolPayload({
         body: {

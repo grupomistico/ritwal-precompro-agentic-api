@@ -1,22 +1,23 @@
-# Ritwal Convocore Middleware Contract
+# Ritwal Agentic Middleware Contract
 
 Base path: local/dev server or deployed middleware URL.
 
-Authentication for Convocore tools:
+Authentication for agent tools:
 
 - Header: `x-tool-secret: <TOOL_SECRET>`
 - Alternative: `Authorization: Bearer <TOOL_SECRET>`
 
-The middleware owns all Precompro safety rules. Convocore must not call Precompro directly.
+The middleware owns all Precompro safety rules. Agents must not call Precompro directly.
 
 The server listens on `0.0.0.0` in local/dev mode so it can be exposed by the
 sandbox tunnel during tests.
 
-Tool payloads can arrive as a direct JSON body, a Convocore parameter array,
+Tool payloads can arrive as a direct JSON body, a generic parameter array,
 query parameters, or wrapped by the calling runtime under `body`, `input`,
 `inputs`, `args`, `arguments`, `parameters`, `params`, `data`, `payload`,
-`toolInput`, or Convocore's runtime `tool_payload`. The middleware normalizes those shapes before validation so
-Convocore can call tools reliably from chat, WhatsApp or the runtime worker.
+`toolInput`, or a runtime `tool_payload`. The middleware normalizes those shapes
+before validation so agent runtimes can call tools reliably from chat, WhatsApp
+or a worker.
 
 ## Endpoints
 
@@ -569,12 +570,12 @@ All middleware errors are normalized:
 }
 ```
 
-Convocore should branch on `ok` and `code`, not on raw Precompro messages.
+Agents should branch on `ok` and `code`, not on raw Precompro messages.
 
 ## Tool Discovery
 
 `GET /tools/schema` returns the tool list, paths, descriptions and JSON schemas
-that should be copied into Convocore when we register the agent.
+that should be registered in OpenClaw or any other internal agent runtime.
 
 ## Operational Rules
 
