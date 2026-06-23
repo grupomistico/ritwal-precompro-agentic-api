@@ -1,8 +1,8 @@
 # Precompro API Notes
 
-Source: https://documentation.precompro.co/docs and https://documentation.precompro.co/docs-json
+Source: https://documentation.precompro.com/docs and https://documentation.precompro.com/docs-json
 
-Environment reviewed from public docs: Staging.
+Environment reviewed from public docs: Production.
 
 Ritwal test credentials currently respond on the hosts without the `2` suffix. The public staging availability host `serviceavailability2.precompro.co` returned a PHP/Composer 500 during testing on 2026-05-05 and again on 2026-05-22.
 
@@ -15,19 +15,19 @@ Authentication:
 - Staging and production API keys are different.
 - For Ritwal, the token must be refreshed every 30 days. Treat `/refresh` as a rotation operation and update the deployed secret immediately after a successful refresh.
 
-Base URLs currently used for staging:
+Base URLs currently used for production:
+
+- Reservation: `https://servicereservation.precompro.com/api/ws`
+- Availability: `https://serviceavailability.precompro.com/api`
+- Vendor: `https://servicevendor.precompro.com/api`
+- Webservice: `https://servicewebservice.precompro.com/api`
+
+Staging hosts from the public documentation:
 
 - Reservation: `https://servicereservation2.precompro.co/api/ws`
 - Availability: `https://serviceavailability2.precompro.co/api`
 - Vendor: `https://servicevendor2.precompro.co/api`
 - Webservice: `https://servicewebservice2.precompro.co/api`
-
-Legacy staging hosts from previous Ritwal tests:
-
-- Reservation: `https://servicereservation.precompro.co/api/ws`
-- Availability: `https://serviceavailability.precompro.co/api`
-- Vendor: `https://servicevendor.precompro.co/api`
-- Webservice: `https://servicewebservice.precompro.co/api`
 
 Endpoints:
 

@@ -17,15 +17,15 @@ export function loadConfig() {
       vendorId: required("PRECOMPRO_VENDOR_ID"),
       reservationBase:
         process.env.PRECOMPRO_RESERVATION_BASE ||
-        "https://servicereservation.precompro.co/api/ws",
+        "https://servicereservation.precompro.com/api/ws",
       availabilityBase:
         process.env.PRECOMPRO_AVAILABILITY_BASE ||
-        "https://serviceavailability.precompro.co/api",
+        "https://serviceavailability.precompro.com/api",
       vendorBase:
-        process.env.PRECOMPRO_VENDOR_BASE || "https://servicevendor.precompro.co/api",
+        process.env.PRECOMPRO_VENDOR_BASE || "https://servicevendor.precompro.com/api",
       webserviceBase:
         process.env.PRECOMPRO_WEBSERVICE_BASE ||
-        "https://servicewebservice.precompro.co/api",
+        "https://servicewebservice.precompro.com/api",
     },
     defaults: {
       countryCode: Number(process.env.DEFAULT_COUNTRY_CODE || 57),
