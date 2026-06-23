@@ -175,6 +175,10 @@ export function buildApp(config = loadConfig()) {
     return customerService.export(toolPayload(request));
   });
 
+  app.post("/tools/customers/demographics", async (request) => {
+    return customerService.demographics(toolPayload(request));
+  });
+
   app.post("/tools/reservations/update", async (request) => {
     return reservationService.update(toolPayload(request));
   });

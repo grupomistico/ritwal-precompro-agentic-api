@@ -17,6 +17,7 @@ Middleware HTTP para que agentes como OpenClaw consulten y gestionen reservas de
 - `POST /tools/customers/lookup`: búsqueda interna de clientes por teléfono, email o nombre.
 - `POST /tools/customers/segment`: segmentación interna de clientes con PII para insumos de marketing.
 - `POST /tools/customers/export`: export CSV paginado de segmentos de clientes.
+- `POST /tools/customers/demographics`: demografía interna agregada por país/código/localidad, sin PII por defecto.
 - `POST /tools/reservations/update`: modifica reserva tras validar disponibilidad.
 - `POST /tools/reservations/cancel`: cancela reserva.
 - `POST /tools/reservations/confirm`: reconfirma reserva.

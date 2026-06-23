@@ -6,6 +6,14 @@ import { normalizePhone } from "../utils/phone.js";
 const MAX_PAGE_SIZE = 5000;
 const DEFAULT_PAGE_SIZE = 100;
 const DEFAULT_LOOKUP_DAYS = 365;
+const CUSTOMER_DEMOGRAPHIC_GROUP_FIELDS = [
+  "country",
+  "countryCode",
+  "nationality",
+  "nationalityCode",
+  "locality",
+  "marketingEligibility",
+];
 const CUSTOMER_SORT_FIELDS = [
   "lastReservationDate",
   "firstReservationDate",
@@ -45,6 +53,11 @@ const customerCriteriaSchema = z
     hasNoShow: z.preprocess(normalizeBooleanInput, z.boolean()).optional(),
     hasCompleted: z.preprocess(normalizeBooleanInput, z.boolean()).optional(),
     hasPending: z.preprocess(normalizeBooleanInput, z.boolean()).optional(),
+    country: stringArraySchema,
+    countryCode: stringArraySchema,
+    nationality: stringArraySchema,
+    nationalityCode: stringArraySchema,
+    locality: stringArraySchema,
     sectionName: stringArraySchema,
     tableName: stringArraySchema,
     source: stringArraySchema,
@@ -98,6 +111,24 @@ export const customerLookupSchema = z
   .refine((data) => data.phone || data.email || data.name, {
     message: "phone, email or name is required",
   });
+
+export const customerDemographicsSchema = z.object({
+  from: z.preprocess(normalizeDateInput, z.string()),
+  to: z.preprocess(normalizeDateInput, z.string()),
+  includeCancelled: z.preprocess(normalizeBooleanInput, z.boolean()).optional().default(true),
+  criteria: customerCriteriaSchema,
+  groupBy: z
+    .preprocess(
+      normalizeStringArrayInput,
+      z.array(z.enum(CUSTOMER_DEMOGRAPHIC_GROUP_FIELDS)).min(1).max(3),
+    )
+    .optional()
+    .default(["country"]),
+  includeCustomers: z.preprocess(normalizeBooleanInput, z.boolean()).optional().default(false),
+  includeReservations: z.preprocess(normalizeBooleanInput, z.boolean()).optional().default(false),
+  limit: z.coerce.number().int().positive().max(MAX_PAGE_SIZE).optional().default(DEFAULT_PAGE_SIZE),
+  cursor: z.string().or(z.number()).optional(),
+});
 
 export class CustomerService {
   constructor({ reservationService, config }) {
@@ -179,6 +210,62 @@ export class CustomerService {
       limit: MAX_PAGE_SIZE,
       ...input,
     });
+  }
+
+  async demographics(input) {
+    const data = customerDemographicsSchema.parse(input);
+    const { customers, scanned } = await this.buildCustomersForRange({
+      from: data.from,
+      to: data.to,
+      includeCancelled: data.includeCancelled,
+    });
+    const filtered = customers
+      .filter((customer) => matchesCustomerCriteria(customer, data.criteria))
+      .sort(customerSorter("lastReservationDate", "desc"));
+    const result = {
+      ok: true,
+      code: filtered.length ? "CUSTOMER_DEMOGRAPHICS_READY" : "NO_CUSTOMERS_MATCHED",
+      message: filtered.length
+        ? "Demografia de clientes lista."
+        : "No encontre clientes para esos criterios.",
+      internalOnly: true,
+      pii: data.includeCustomers,
+      demographicFieldNote:
+        "country/countryCode vienen de los datos de contacto en Precompro. Usarlos como pais reportado, no como nacionalidad legal verificada.",
+      marketingConsentAssumption:
+        "Todos los contactos en Precompro se tratan como opt-in, segun configuracion operativa de Ritwal.",
+      query: {
+        from: data.from,
+        to: data.to,
+        includeCancelled: data.includeCancelled,
+        criteria: normalizeCriteriaForOutput(data.criteria),
+        groupBy: data.groupBy,
+      },
+      scanned,
+      summary: summarizeCustomerSet(filtered),
+      groups: buildCustomerDemographicGroups(filtered, data.groupBy),
+    };
+
+    if (data.includeCustomers) {
+      const offset = cursorToOffset(data.cursor);
+      const page = filtered.slice(offset, offset + data.limit);
+      const nextOffset = offset + page.length;
+      result.pagination = {
+        totalCustomers: filtered.length,
+        returnedCustomers: page.length,
+        limit: data.limit,
+        cursor: offset ? String(offset) : null,
+        nextCursor: nextOffset < filtered.length ? String(nextOffset) : null,
+      };
+      result.customers = page.map((customer) =>
+        customerOutput(customer, {
+          includeReservations: data.includeReservations,
+          includeRawReservations: false,
+        }),
+      );
+    }
+
+    return result;
   }
 
   async buildCustomersForRange({ from, to, includeCancelled }) {
@@ -404,6 +491,8 @@ function sanitizeReservationForCustomer(reservation, config) {
 
 function matchesCustomerCriteria(customer, criteria = {}) {
   const { metrics, contact, reservations } = customer;
+  const countryCriteria = combineArrayValues(criteria.country, criteria.nationality);
+  const countryCodeCriteria = combineArrayValues(criteria.countryCode, criteria.nationalityCode);
   if (!numberAtLeast(metrics.totalReservations, criteria.minTotalReservations)) return false;
   if (!numberAtMost(metrics.totalReservations, criteria.maxTotalReservations)) return false;
   if (!numberAtLeast(metrics.completedReservations, criteria.minCompletedReservations)) {
@@ -443,6 +532,14 @@ function matchesCustomerCriteria(customer, criteria = {}) {
   if (!dateBefore(metrics.firstReservationDate, criteria.firstReservationBefore)) return false;
   if (!dateAfter(metrics.firstReservationDate, criteria.firstReservationAfter)) return false;
 
+  if (!matchesAnyValue([contact.country, ...(contact.countries || [])], countryCriteria)) {
+    return false;
+  }
+  if (!matchesAnyValue([contact.countryCode, ...(contact.countryCodes || [])], countryCodeCriteria)) {
+    return false;
+  }
+  if (!matchesStringFilter(customerLocality(customer), criteria.locality)) return false;
+
   if (!matchesAnyReservation(reservations, "sectionName", criteria.sectionName)) return false;
   if (!matchesAnyReservation(reservations, "tableName", criteria.tableName)) return false;
   if (!matchesAnyReservation(reservations, "source", criteria.source)) return false;
@@ -478,6 +575,154 @@ function matchesCustomerCriteria(customer, criteria = {}) {
   }
 
   return true;
+}
+
+function buildCustomerDemographicGroups(customers, groupBy) {
+  const totalCustomers = customers.length;
+  const grouped = new Map();
+  for (const customer of customers) {
+    const dimensions = Object.fromEntries(
+      groupBy.map((field) => [field, customerDemographicValue(customer, field)]),
+    );
+    const key = groupBy.map((field) => `${field}:${dimensions[field]}`).join(" | ");
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        key,
+        label: key,
+        dimensions,
+        customers: [],
+      });
+    }
+    grouped.get(key).customers.push(customer);
+  }
+
+  return [...grouped.values()]
+    .map((group) => {
+      const summary = summarizeCustomerSet(group.customers, { includeTopValues: false });
+      return {
+        key: group.key,
+        label: group.label,
+        dimensions: group.dimensions,
+        percentageOfCustomers: totalCustomers
+          ? round(group.customers.length / totalCustomers, 4)
+          : 0,
+        ...summary,
+      };
+    })
+    .sort(
+      (left, right) =>
+        right.totalCustomers - left.totalCustomers || left.label.localeCompare(right.label, "es"),
+    );
+}
+
+function summarizeCustomerSet(customers, options = {}) {
+  const includeTopValues = options.includeTopValues !== false;
+  const summary = {
+    totalCustomers: customers.length,
+    contactableCustomers: 0,
+    withPhone: 0,
+    withEmail: 0,
+    withCountry: 0,
+    withCountryCode: 0,
+    colombiaCustomers: 0,
+    internationalCustomers: 0,
+    unknownCountryCustomers: 0,
+    totalReservations: 0,
+    activeReservations: 0,
+    completedReservations: 0,
+    cancelledReservations: 0,
+    noShowReservations: 0,
+    pendingReservations: 0,
+    totalPeople: 0,
+    activePeople: 0,
+    completedPeople: 0,
+    cancelledPeople: 0,
+    noShowPeople: 0,
+    pendingPeople: 0,
+    totalBalancePaid: 0,
+    averageReservationsPerCustomer: 0,
+    averageCompletedPeoplePerCustomer: 0,
+  };
+
+  for (const customer of customers) {
+    const { contact, metrics } = customer;
+    if (contact.marketingEligible) summary.contactableCustomers += 1;
+    if (contact.phone) summary.withPhone += 1;
+    if (contact.email) summary.withEmail += 1;
+    if (contact.country) summary.withCountry += 1;
+    if (contact.countryCode) summary.withCountryCode += 1;
+    const locality = customerLocality(customer);
+    if (locality === "colombia") summary.colombiaCustomers += 1;
+    if (locality === "international") summary.internationalCustomers += 1;
+    if (locality === "unknown") summary.unknownCountryCustomers += 1;
+
+    summary.totalReservations += metrics.totalReservations;
+    summary.activeReservations += metrics.activeReservations;
+    summary.completedReservations += metrics.completedReservations;
+    summary.cancelledReservations += metrics.cancelledReservations;
+    summary.noShowReservations += metrics.noShowReservations;
+    summary.pendingReservations += metrics.pendingReservations;
+    summary.totalPeople += metrics.totalPeople;
+    summary.activePeople += metrics.activePeople;
+    summary.completedPeople += metrics.completedPeople;
+    summary.cancelledPeople += metrics.cancelledPeople;
+    summary.noShowPeople += metrics.noShowPeople;
+    summary.pendingPeople += metrics.pendingPeople;
+    summary.totalBalancePaid += metrics.totalBalancePaid;
+  }
+
+  if (summary.totalCustomers) {
+    summary.averageReservationsPerCustomer = round(
+      summary.totalReservations / summary.totalCustomers,
+      2,
+    );
+    summary.averageCompletedPeoplePerCustomer = round(
+      summary.completedPeople / summary.totalCustomers,
+      2,
+    );
+  }
+
+  if (includeTopValues) {
+    summary.topCountries = topCustomerDemographicValues(customers, "country", 15);
+    summary.topCountryCodes = topCustomerDemographicValues(customers, "countryCode", 15);
+    summary.localityBreakdown = topCustomerDemographicValues(customers, "locality", 5);
+  }
+
+  return summary;
+}
+
+function topCustomerDemographicValues(customers, field, limit) {
+  const values = customers.map((customer) => customerDemographicValue(customer, field));
+  return topFromValues(values, limit).map((item) => ({
+    ...item,
+    percentageOfCustomers: customers.length ? round(item.count / customers.length, 4) : 0,
+  }));
+}
+
+function customerDemographicValue(customer, field) {
+  if (field === "country" || field === "nationality") {
+    return customer.contact.country || "unknown";
+  }
+  if (field === "countryCode" || field === "nationalityCode") {
+    return customer.contact.countryCode ? String(customer.contact.countryCode) : "unknown";
+  }
+  if (field === "locality") return customerLocality(customer);
+  if (field === "marketingEligibility") {
+    return customer.contact.marketingEligible ? "contactable" : "missing_contact";
+  }
+  return "unknown";
+}
+
+function customerLocality(customer) {
+  const countries = [customer.contact.country, ...(customer.contact.countries || [])]
+    .map(normalizeComparable)
+    .filter(Boolean);
+  const countryCodes = [customer.contact.countryCode, ...(customer.contact.countryCodes || [])]
+    .map(normalizeComparable)
+    .filter(Boolean);
+  if (countries.includes("colombia") || countryCodes.includes("57")) return "colombia";
+  if (countries.length || countryCodes.length) return "international";
+  return "unknown";
 }
 
 function formatCustomerPage({
@@ -787,6 +1032,13 @@ function matchesAnyStructuredComment(reservations, field, allowedValues) {
   );
 }
 
+function matchesAnyValue(values, allowedValues) {
+  if (!allowedValues?.length) return true;
+  const normalizedValues = values.filter((value) => value !== undefined && value !== null);
+  const valuesToCheck = normalizedValues.length ? normalizedValues : ["unknown"];
+  return valuesToCheck.some((value) => matchesStringFilter(value, allowedValues));
+}
+
 function matchesStringFilter(value, allowedValues) {
   if (!allowedValues?.length) return true;
   const normalizedValue = normalizeComparable(value || "unknown");
@@ -812,6 +1064,10 @@ function normalizeEmail(value) {
 
 function uniqueNonEmpty(values) {
   return [...new Set(values.filter((value) => value !== undefined && value !== null && value !== ""))];
+}
+
+function combineArrayValues(...values) {
+  return uniqueNonEmpty(values.flatMap((value) => value || []));
 }
 
 function topValues(reservations, field, limit = 5) {

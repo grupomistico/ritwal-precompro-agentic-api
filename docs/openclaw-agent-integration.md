@@ -82,6 +82,7 @@ Registrar estas herramientas HTTP.
 | `customer_lookup` | `POST` | `/tools/customers/lookup` | Buscar clientes internos por teléfono, email o nombre. Devuelve PII. |
 | `customer_segment` | `POST` | `/tools/customers/segment` | Crear segmentos/base de clientes con PII, métricas y preferencias. |
 | `customer_export` | `POST` | `/tools/customers/export` | Exportar segmentos de clientes en CSV para usar en otra herramienta. |
+| `customer_demographics` | `POST` | `/tools/customers/demographics` | Reportar demografía agregada por país/código/localidad, sin PII por defecto. |
 | `update_reservation` | `POST` | `/tools/reservations/update` | Modificar una reserva activa tras revalidar disponibilidad. |
 | `cancel_reservation` | `POST` | `/tools/reservations/cancel` | Cancelar una reserva. |
 | `confirm_reservation` | `POST` | `/tools/reservations/confirm` | Reconfirmar una reserva existente. Solo para flujos de recordatorio. |
@@ -696,6 +697,34 @@ Export CSV:
 }
 ```
 
+Clientes de un país reportado en Precompro:
+
+```json
+{
+  "from": "2026-06-01",
+  "to": "2026-06-30",
+  "criteria": {
+    "country": "Canada"
+  },
+  "outputFormat": "json",
+  "limit": 100
+}
+```
+
+Clientes internacionales:
+
+```json
+{
+  "from": "2026-06-01",
+  "to": "2026-06-30",
+  "criteria": {
+    "locality": "international"
+  },
+  "outputFormat": "csv",
+  "limit": 5000
+}
+```
+
 Campos clave de respuesta:
 
 - `contact`: nombre, teléfonos, emails, documento, país y consentimiento asumido desde Precompro.
@@ -711,7 +740,83 @@ Comportamiento del agente:
 - Si pide "todos", usar páginas: `limit=5000` y repetir con `cursor=nextCursor`.
 - Para "cancelaron", usar `criteria.minCancelledReservations=1`.
 - Para "más de 10 reservas", usar `criteria.minTotalReservations=11`.
+- Para país/nacionalidad reportada, usar `criteria.country`; `nationality` funciona como alias, pero no implica nacionalidad legal verificada.
+- Para extranjeros vs Colombia, usar `criteria.locality` con `international`, `colombia` o `unknown`.
 - Para "último mes", calcular fechas exactas en `America/Bogota`.
+
+### `customer_demographics`
+
+Usar para preguntas internas de demografía, país, visitantes extranjeros o "nacionalidades". Por defecto devuelve agregados sin nombres, teléfonos ni correos.
+
+Importante: Precompro devuelve `country` y `countryCode` del contacto. El agente debe tratarlo como país/código reportado en Precompro, no como nacionalidad legal o pasaporte verificado.
+
+Request:
+
+```http
+POST /tools/customers/demographics
+```
+
+Distribución por país:
+
+```json
+{
+  "from": "2026-06-01",
+  "to": "2026-06-30",
+  "groupBy": ["country"]
+}
+```
+
+Colombia vs internacionales:
+
+```json
+{
+  "from": "2026-06-01",
+  "to": "2026-06-30",
+  "groupBy": ["locality"]
+}
+```
+
+Clientes internacionales con datos incluidos:
+
+```json
+{
+  "from": "2026-06-01",
+  "to": "2026-06-30",
+  "criteria": {
+    "locality": "international"
+  },
+  "groupBy": ["country"],
+  "includeCustomers": true,
+  "includeReservations": false,
+  "limit": 5000
+}
+```
+
+Campos de respuesta:
+
+- `summary.totalCustomers`: clientes únicos detectados en el rango.
+- `summary.completedPeople`: personas asociadas a reservas finalizadas.
+- `summary.topCountries`: ranking de países por clientes únicos.
+- `summary.localityBreakdown`: `colombia`, `international` y `unknown`.
+- `groups`: desglose por las dimensiones pedidas en `groupBy`.
+- `demographicFieldNote`: recordatorio de que el dato viene de Precompro y no es nacionalidad legal.
+- `customers`: solo aparece si `includeCustomers=true`; contiene PII y debe ser uso interno.
+
+Dimensiones válidas en `groupBy`:
+
+- `country`
+- `countryCode`
+- `nationality` alias de `country`
+- `nationalityCode` alias de `countryCode`
+- `locality`
+- `marketingEligibility`
+
+Comportamiento del agente:
+
+- Para "qué nacionalidades nos visitan", llamar `customer_demographics` con `groupBy=["country"]`.
+- Para "cuántos extranjeros", llamar `customer_demographics` con `groupBy=["locality"]`.
+- Para "dame la base de canadienses", usar `customer_segment` o `customer_export` con `criteria.country="Canada"`.
+- Al responder, decir "país reportado en Precompro" si el usuario pide precisión demográfica.
 
 ### `customer_lookup`
 
@@ -866,6 +971,7 @@ Antes de crear una reserva, reúne nombre, teléfono, fecha, hora exacta y núme
 Antes de modificar o cancelar, busca la reserva por teléfono con search_reservations. Si hay varias, pide al cliente elegir por fecha y hora.
 Para preguntas internas de reportes, reservas pasadas, conteos por fecha o "personas que trajo", calcula el rango exacto en America/Bogota. Usa list_reservations_by_date para una fecha, list_reservations_range para un rango simple y reservation_report para desgloses por hora, zona, mesa, estado, fuente, rankings o comparativos. Usa activeReservations para reservas no canceladas y completedPeople para personas que realmente llegaron; no cuentes No Llego como asistencia.
 Para preguntas internas de clientes, bases de datos, nombres, teléfonos, correos o segmentos de marketing, usa customer_lookup, customer_segment o customer_export. Estas herramientas solo preparan datos; no envían campañas ni mensajes.
+Para preguntas internas de demografía, país, visitantes extranjeros o "nacionalidades", usa customer_demographics. Interpreta country/countryCode como país/código reportado en Precompro, no como nacionalidad legal verificada. Para bases con PII por país, usa customer_segment o customer_export con criteria.country.
 
 No menciones Precompro, middleware, API, errores técnicos, status codes ni tokens al cliente.
 Si una herramienta falla o tarda, responde de forma humana: "Déjame validarlo con el equipo de Ritwal y te confirmamos en un momento." Luego escala a humano.
@@ -956,6 +1062,16 @@ Mantén el tono cálido, claro y conciso. Confirma siempre fecha, hora, número 
 6. Si `pagination.nextCursor` viene con valor, avisar que hay más páginas o pedir la siguiente página automáticamente si el usuario pidió "todos".
 7. No intentar enviar campañas desde esta API.
 
+### Flujo De Demografía De Clientes
+
+1. Confirmar que es una solicitud interna/admin.
+2. Calcular `from` y `to` exactos.
+3. Para países o "nacionalidades", llamar `customer_demographics` con `groupBy=["country"]`.
+4. Para Colombia vs extranjeros, llamar `customer_demographics` con `groupBy=["locality"]`.
+5. Para filtrar un país, usar `criteria.country`, por ejemplo `"Canada"`.
+6. Responder con agregados de `summary` y `groups`; no pedir PII salvo que el usuario pida una base.
+7. Aclarar que es país reportado en Precompro si el usuario pide precisión de nacionalidad.
+
 ## Manejo De Errores
 
 | Código/patrón | Respuesta del agente |
@@ -1025,6 +1141,24 @@ curl -H "x-tool-secret: $TOOL_SECRET" \
   -H "content-type: application/json" \
   -d '{"from":"2026-05-23","to":"2026-06-23","criteria":{"minTotalReservations":11},"limit":5000}' \
   https://ritwal-precompro-api.grupomistico.cloud/tools/customers/export
+```
+
+Demografía por país, sin PII:
+
+```sh
+curl -H "x-tool-secret: $TOOL_SECRET" \
+  -H "content-type: application/json" \
+  -d '{"from":"2026-06-01","to":"2026-06-30","groupBy":["country"]}' \
+  https://ritwal-precompro-api.grupomistico.cloud/tools/customers/demographics
+```
+
+Clientes internacionales para base interna:
+
+```sh
+curl -H "x-tool-secret: $TOOL_SECRET" \
+  -H "content-type: application/json" \
+  -d '{"from":"2026-06-01","to":"2026-06-30","criteria":{"locality":"international"},"groupBy":["country"],"includeCustomers":true,"limit":5000}' \
+  https://ritwal-precompro-api.grupomistico.cloud/tools/customers/demographics
 ```
 
 Diagnóstico:

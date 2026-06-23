@@ -382,12 +382,96 @@ Response shape:
 ```
 
 Supported criteria include reservation counts, people counts, rates, phone/email
-presence, cancellation/no-show/completed flags, date recency, section/table,
+presence, cancellation/no-show/completed flags, date recency, country/country
+code, locality (`colombia`, `international`, `unknown`), section/table,
 source/provider, reservation hour, weekday, party bucket, occasion, preferred
-zone, name text and comments text.
+zone, name text and comments text. `nationality` is accepted as an alias of
+`country`, but the value is only the country reported in Precompro, not a legal
+nationality/passport verification.
 
 Ranges have no hard day limit. Results are paginated with `limit` and
 `pagination.nextCursor`.
+
+### `POST /tools/customers/demographics`
+
+Internal-only aggregate demographics endpoint. It scans Precompro reservations by
+date range, deduplicates contacts, applies the same criteria as
+`customer_segment`, and groups customers without returning PII by default.
+
+Input for country distribution:
+
+```json
+{
+  "from": "2026-06-01",
+  "to": "2026-06-30",
+  "groupBy": ["country"]
+}
+```
+
+Input for Colombia vs international visitors:
+
+```json
+{
+  "from": "2026-06-01",
+  "to": "2026-06-30",
+  "groupBy": ["locality"]
+}
+```
+
+Input for an internal customer list filtered by country:
+
+```json
+{
+  "from": "2026-06-01",
+  "to": "2026-06-30",
+  "criteria": {
+    "country": "Canada"
+  },
+  "groupBy": ["country"],
+  "includeCustomers": true,
+  "limit": 5000
+}
+```
+
+Response shape:
+
+```json
+{
+  "ok": true,
+  "code": "CUSTOMER_DEMOGRAPHICS_READY",
+  "internalOnly": true,
+  "pii": false,
+  "demographicFieldNote": "country/countryCode vienen de los datos de contacto en Precompro...",
+  "summary": {
+    "totalCustomers": 252,
+    "completedPeople": 600,
+    "topCountries": [
+      {
+        "value": "Colombia",
+        "count": 195,
+        "percentageOfCustomers": 0.7738
+      }
+    ],
+    "localityBreakdown": []
+  },
+  "groups": [
+    {
+      "dimensions": {
+        "country": "Colombia"
+      },
+      "totalCustomers": 195,
+      "completedPeople": 450
+    }
+  ]
+}
+```
+
+Allowed `groupBy` values: `country`, `countryCode`, `nationality`,
+`nationalityCode`, `locality`, `marketingEligibility`.
+
+Set `includeCustomers=true` only for the internal/admin agent when the user asks
+for a base or contact list. That changes `pii` to `true` and returns paginated
+`customers`.
 
 ### `POST /tools/customers/lookup`
 

@@ -202,6 +202,173 @@ describe("CustomerService", () => {
     expect(result.customers[0].contact.email).toBe("target@example.com");
   });
 
+  it("filters customer segments by reported country", async () => {
+    const { service } = buildService({
+      "2026-06-01": [
+        reservation({
+          id: "canada-1",
+          displayName: "Claire Maple",
+          phone: "14165550100",
+          email: "claire@example.ca",
+          countryCode: "1",
+          country: "Canada",
+          date: "2026-06-01",
+        }),
+        reservation({
+          id: "colombia-1",
+          displayName: "Carlos Ruiz",
+          phone: "573001110000",
+          email: "carlos@example.com",
+          countryCode: "57",
+          country: "Colombia",
+          date: "2026-06-01",
+        }),
+      ],
+    });
+
+    const result = await service.segment({
+      from: "2026-06-01",
+      to: "2026-06-01",
+      criteria: {
+        country: "Canada",
+      },
+    });
+
+    expect(result.pagination.totalCustomers).toBe(1);
+    expect(result.customers[0].contact).toMatchObject({
+      displayName: "Claire Maple",
+      country: "Canada",
+      countryCode: "1",
+    });
+  });
+
+  it("builds customer demographics without PII by default", async () => {
+    const { service } = buildService({
+      "2026-06-01": [
+        reservation({
+          id: "canada-1",
+          displayName: "Claire Maple",
+          phone: "14165550100",
+          email: "claire@example.ca",
+          countryCode: "1",
+          country: "Canada",
+          people: 2,
+          date: "2026-06-01",
+        }),
+        reservation({
+          id: "canada-2",
+          displayName: "Claire Maple",
+          phone: "14165550100",
+          email: "claire@example.ca",
+          countryCode: "1",
+          country: "Canada",
+          people: 3,
+          date: "2026-06-01",
+        }),
+        reservation({
+          id: "colombia-1",
+          displayName: "Carlos Ruiz",
+          phone: "573001110000",
+          email: "carlos@example.com",
+          countryCode: "57",
+          country: "Colombia",
+          people: 4,
+          date: "2026-06-01",
+        }),
+      ],
+    });
+
+    const result = await service.demographics({
+      from: "2026-06-01",
+      to: "2026-06-01",
+      groupBy: ["country"],
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      code: "CUSTOMER_DEMOGRAPHICS_READY",
+      internalOnly: true,
+      pii: false,
+      summary: {
+        totalCustomers: 2,
+        totalReservations: 3,
+        completedPeople: 9,
+        colombiaCustomers: 1,
+        internationalCustomers: 1,
+      },
+    });
+    expect(result.customers).toBeUndefined();
+    expect(result.groups).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          dimensions: { country: "Canada" },
+          totalCustomers: 1,
+          totalReservations: 2,
+          completedPeople: 5,
+        }),
+        expect.objectContaining({
+          dimensions: { country: "Colombia" },
+          totalCustomers: 1,
+          totalReservations: 1,
+          completedPeople: 4,
+        }),
+      ]),
+    );
+  });
+
+  it("filters demographics by international locality and can include customers", async () => {
+    const { service } = buildService({
+      "2026-06-01": [
+        reservation({
+          id: "canada-1",
+          displayName: "Claire Maple",
+          phone: "14165550100",
+          email: "claire@example.ca",
+          countryCode: "1",
+          country: "Canada",
+          date: "2026-06-01",
+        }),
+        reservation({
+          id: "colombia-1",
+          displayName: "Carlos Ruiz",
+          phone: "573001110000",
+          email: "carlos@example.com",
+          countryCode: "57",
+          country: "Colombia",
+          date: "2026-06-01",
+        }),
+      ],
+    });
+
+    const result = await service.demographics({
+      from: "2026-06-01",
+      to: "2026-06-01",
+      criteria: {
+        locality: "international",
+      },
+      groupBy: ["locality"],
+      includeCustomers: true,
+      limit: 10,
+    });
+
+    expect(result).toMatchObject({
+      pii: true,
+      summary: {
+        totalCustomers: 1,
+        internationalCustomers: 1,
+      },
+      pagination: {
+        totalCustomers: 1,
+        returnedCustomers: 1,
+      },
+    });
+    expect(result.groups[0]).toMatchObject({
+      dimensions: { locality: "international" },
+      totalCustomers: 1,
+    });
+    expect(result.customers[0].contact.displayName).toBe("Claire Maple");
+  });
+
   it("exports customer segments as CSV", async () => {
     const { service } = buildService({
       "2026-06-01": [
@@ -246,6 +413,8 @@ function reservation({
   cancelled = false,
   noShow = false,
   sectionName = "Salón",
+  countryCode = "57",
+  country = "Colombia",
 }) {
   return {
     id,
@@ -253,8 +422,8 @@ function reservation({
     phone,
     email,
     identityDocument: null,
-    countryCode: "57",
-    country: "Colombia",
+    countryCode,
+    country,
     people,
     date,
     dateTime: `${date} ${time}:00`,
