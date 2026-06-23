@@ -16,6 +16,14 @@ Middleware HTTP para que agentes como OpenClaw consulten y gestionen reservas de
 - `POST /tools/reservations/confirm`: reconfirma reserva.
 - `GET /tools/diagnostics/precompro`: diagnóstico protegido de IP de salida, bases y estado Precompro.
 
+## OpenClaw
+
+La guía completa para conectar un agente OpenClaw está en:
+
+```text
+docs/openclaw-agent-integration.md
+```
+
 ## Agent Auth
 
 Los endpoints `/tools/*` aceptan:
