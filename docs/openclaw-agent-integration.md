@@ -76,6 +76,8 @@ Registrar estas herramientas HTTP.
 | `check_availability` | `POST` | `/tools/availability` | Consultar horarios disponibles. |
 | `create_reservation` | `POST` | `/tools/reservations/create` | Crear reserva tras validar disponibilidad exacta. |
 | `search_reservations` | `POST` | `/tools/reservations/search` | Buscar reservas activas por teléfono. |
+| `list_reservations_by_date` | `POST` | `/tools/reservations/list-date` | Reporte solo lectura de reservas de una fecha. |
+| `list_reservations_range` | `POST` | `/tools/reservations/list-range` | Reporte solo lectura de reservas de un rango. |
 | `update_reservation` | `POST` | `/tools/reservations/update` | Modificar una reserva activa tras revalidar disponibilidad. |
 | `cancel_reservation` | `POST` | `/tools/reservations/cancel` | Cancelar una reserva. |
 | `confirm_reservation` | `POST` | `/tools/reservations/confirm` | Reconfirmar una reserva existente. Solo para flujos de recordatorio. |
@@ -355,6 +357,139 @@ Comportamiento del agente:
 - Si hay una reserva activa, resumirla y continuar.
 - Si hay varias reservas activas, pedir al cliente elegir por fecha y hora.
 
+### `list_reservations_by_date`
+
+Usar para preguntas internas o gerenciales sobre una fecha específica:
+
+- "Cuántas reservas hubo el lunes?"
+- "Cuántas personas trajo el 15 de junio?"
+- "Muéstrame reservas canceladas de ayer."
+
+Request:
+
+```http
+POST /tools/reservations/list-date
+```
+
+Input:
+
+```json
+{
+  "date": "2026-06-15",
+  "includeCancelled": true
+}
+```
+
+Requerido:
+
+- `date`
+
+Opcional:
+
+- `includeCancelled`, por defecto `true`
+
+Respuesta relevante:
+
+```json
+{
+  "ok": true,
+  "code": "RESERVATIONS_BY_DATE_FOUND",
+  "date": "2026-06-15",
+  "summary": {
+    "totalReservations": 10,
+    "activeReservations": 8,
+    "cancelledReservations": 2,
+    "totalPeople": 34,
+    "activePeople": 27,
+    "cancelledPeople": 7,
+    "statusCounts": {
+      "Sin Reconfirmar": 8,
+      "Cancelada": 2
+    }
+  },
+  "reservations": []
+}
+```
+
+Comportamiento del agente:
+
+- Para "cuántas reservas hubo", responder con `summary.activeReservations`, salvo que pidan incluir canceladas.
+- Para "cuántas personas trajo", responder con `summary.activePeople`.
+- Si el usuario pregunta por cancelaciones, usar `summary.cancelledReservations` y `summary.cancelledPeople`.
+- Si necesita auditar, usar el arreglo `reservations`; si solo necesita totales, no listar nombres o teléfonos.
+
+### `list_reservations_range`
+
+Usar para preguntas internas o gerenciales por rango:
+
+- "Cuántas reservas hubo la semana pasada de lunes a viernes?"
+- "Cuántas personas trajo Ritwal del 15 al 19 de junio?"
+- "Dame reservas por día de esta semana."
+
+Request:
+
+```http
+POST /tools/reservations/list-range
+```
+
+Input:
+
+```json
+{
+  "from": "2026-06-15",
+  "to": "2026-06-19",
+  "includeCancelled": true,
+  "includeReservations": false
+}
+```
+
+Requeridos:
+
+- `from`
+- `to`
+
+Opcionales:
+
+- `includeCancelled`, por defecto `true`
+- `includeReservations`, por defecto `true`; usar `false` cuando solo se necesiten totales.
+
+Respuesta relevante:
+
+```json
+{
+  "ok": true,
+  "code": "RESERVATIONS_RANGE_FOUND",
+  "from": "2026-06-15",
+  "to": "2026-06-19",
+  "daysCount": 5,
+  "summary": {
+    "totalReservations": 42,
+    "activeReservations": 35,
+    "cancelledReservations": 7,
+    "totalPeople": 126,
+    "activePeople": 103,
+    "cancelledPeople": 23
+  },
+  "days": [
+    {
+      "date": "2026-06-15",
+      "summary": {
+        "activeReservations": 8,
+        "activePeople": 27
+      }
+    }
+  ]
+}
+```
+
+Comportamiento del agente:
+
+- Convertir frases relativas a fechas exactas en `America/Bogota` antes de llamar. Ejemplo: si hoy es 2026-06-23, "semana pasada de lunes a viernes" es `from=2026-06-15`, `to=2026-06-19`.
+- Para respuestas de asistencia usar `summary.activeReservations` y `summary.activePeople`.
+- Si el usuario pide desglose diario, leer `days[].summary`.
+- Para reportes livianos usar `includeReservations=false`.
+- El rango máximo es 31 días. Si el usuario pide más, dividir en rangos o pedir acotar.
+
 ### `update_reservation`
 
 Usar cuando el cliente quiera cambiar fecha, hora, número de personas, nombre, teléfono, correo o notas.
@@ -475,6 +610,7 @@ Usa las herramientas del middleware para reservas. Nunca inventes disponibilidad
 Antes de decir que un horario está disponible, llama check_availability.
 Antes de crear una reserva, reúne nombre, teléfono, fecha, hora exacta y número de personas, confirma con el cliente y llama create_reservation.
 Antes de modificar o cancelar, busca la reserva por teléfono con search_reservations. Si hay varias, pide al cliente elegir por fecha y hora.
+Para preguntas internas de reportes, reservas pasadas, conteos por fecha o "personas que trajo", calcula el rango exacto en America/Bogota y llama list_reservations_by_date o list_reservations_range. Usa activeReservations y activePeople para no contar canceladas como asistencia.
 
 No menciones Precompro, middleware, API, errores técnicos, status codes ni tokens al cliente.
 Si una herramienta falla o tarda, responde de forma humana: "Déjame validarlo con el equipo de Ritwal y te confirmamos en un momento." Luego escala a humano.
@@ -528,6 +664,17 @@ Mantén el tono cálido, claro y conciso. Confirma siempre fecha, hora, número 
 5. Llamar `cancel_reservation`.
 6. Responder con confirmación de cancelación.
 
+### Flujo De Reporte Por Fechas
+
+1. Identificar si el usuario pide una fecha única o un rango.
+2. Convertir frases relativas a fechas exactas en `America/Bogota`.
+3. Si es una fecha, llamar `list_reservations_by_date`.
+4. Si es un rango, llamar `list_reservations_range`.
+5. Para "reservas hubo" usar `summary.activeReservations`.
+6. Para "personas trajo" usar `summary.activePeople`.
+7. Si piden canceladas, sumar o mostrar `summary.cancelledReservations` y `summary.cancelledPeople`.
+8. Si piden desglose por día, usar `days[].summary`.
+
 ## Manejo De Errores
 
 | Código/patrón | Respuesta del agente |
@@ -561,6 +708,15 @@ curl -H "x-tool-secret: $TOOL_SECRET" \
   -H "content-type: application/json" \
   -d '{"date":"mañana","partySize":2,"time":"7pm"}' \
   https://ritwal-precompro-api.grupomistico.cloud/tools/availability
+```
+
+Reporte de reservas por rango, solo lectura:
+
+```sh
+curl -H "x-tool-secret: $TOOL_SECRET" \
+  -H "content-type: application/json" \
+  -d '{"from":"2026-06-15","to":"2026-06-19","includeCancelled":true,"includeReservations":false}' \
+  https://ritwal-precompro-api.grupomistico.cloud/tools/reservations/list-range
 ```
 
 Diagnóstico:

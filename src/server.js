@@ -146,6 +146,14 @@ export function buildApp(config = loadConfig()) {
     return reservationService.search(toolPayload(request));
   });
 
+  app.post("/tools/reservations/list-date", async (request) => {
+    return reservationService.listByDate(toolPayload(request));
+  });
+
+  app.post("/tools/reservations/list-range", async (request) => {
+    return reservationService.listRange(toolPayload(request));
+  });
+
   app.post("/tools/reservations/update", async (request) => {
     return reservationService.update(toolPayload(request));
   });

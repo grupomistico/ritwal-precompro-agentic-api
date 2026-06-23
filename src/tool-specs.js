@@ -114,6 +114,66 @@ export const toolSpecs = [
     },
   },
   {
+    name: "list_reservations_by_date",
+    method: "POST",
+    path: "/tools/reservations/list-date",
+    description:
+      "Herramienta solo lectura para listar y resumir reservas de una fecha. Usar activeReservations y activePeople para responder cuantas reservas/personas reales hubo sin contar canceladas.",
+    inputSchema: {
+      type: "object",
+      required: ["date"],
+      additionalProperties: false,
+      properties: {
+        date: {
+          type: "string",
+          description:
+            "Fecha a consultar en YYYY-MM-DD. Puede ser pasada; tambien acepta hoy, mañana/manana y pasado mañana.",
+        },
+        includeCancelled: {
+          type: ["boolean", "string", "number"],
+          default: true,
+          description:
+            "Si es true incluye canceladas en el detalle y las separa en summary.cancelledReservations/cancelledPeople.",
+        },
+      },
+    },
+  },
+  {
+    name: "list_reservations_range",
+    method: "POST",
+    path: "/tools/reservations/list-range",
+    description:
+      "Herramienta solo lectura para reportes por rango de fechas, maximo 31 dias. Ideal para preguntas como reservas de lunes a viernes y personas que trajo.",
+    inputSchema: {
+      type: "object",
+      required: ["from", "to"],
+      additionalProperties: false,
+      properties: {
+        from: {
+          type: "string",
+          description:
+            "Fecha inicial en YYYY-MM-DD. Para 'semana pasada' el agente debe calcular la fecha exacta en America/Bogota.",
+        },
+        to: {
+          type: "string",
+          description: "Fecha final en YYYY-MM-DD. El rango es inclusivo.",
+        },
+        includeCancelled: {
+          type: ["boolean", "string", "number"],
+          default: true,
+          description:
+            "Si es true incluye canceladas en el detalle y las separa en summary.cancelledReservations/cancelledPeople.",
+        },
+        includeReservations: {
+          type: ["boolean", "string", "number"],
+          default: true,
+          description:
+            "Si es false devuelve solo summaries por dia y total; util para reportes sin detalle de cada reserva.",
+        },
+      },
+    },
+  },
+  {
     name: "update_reservation",
     method: "POST",
     path: "/tools/reservations/update",

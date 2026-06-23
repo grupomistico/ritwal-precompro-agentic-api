@@ -11,6 +11,8 @@ Middleware HTTP para que agentes como OpenClaw consulten y gestionen reservas de
 - `POST /tools/availability`: consulta disponibilidad.
 - `POST /tools/reservations/create`: crea reserva tras validar disponibilidad exacta.
 - `POST /tools/reservations/search`: busca reservas activas por teléfono.
+- `POST /tools/reservations/list-date`: reporte solo lectura de reservas por fecha.
+- `POST /tools/reservations/list-range`: reporte solo lectura de reservas por rango, máximo 31 días.
 - `POST /tools/reservations/update`: modifica reserva tras validar disponibilidad.
 - `POST /tools/reservations/cancel`: cancela reserva.
 - `POST /tools/reservations/confirm`: reconfirma reserva.

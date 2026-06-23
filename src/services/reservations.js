@@ -57,6 +57,18 @@ export const searchReservationsSchema = z.object({
   phone: z.string().or(z.number()),
 });
 
+export const listReservationsByDateSchema = z.object({
+  date: z.preprocess(normalizeDateInput, z.string()),
+  includeCancelled: z.preprocess(normalizeBooleanInput, z.boolean()).optional().default(true),
+});
+
+export const listReservationsRangeSchema = z.object({
+  from: z.preprocess(normalizeDateInput, z.string()),
+  to: z.preprocess(normalizeDateInput, z.string()),
+  includeCancelled: z.preprocess(normalizeBooleanInput, z.boolean()).optional().default(true),
+  includeReservations: z.preprocess(normalizeBooleanInput, z.boolean()).optional().default(true),
+});
+
 export const updateReservationSchema = z.object({
   reservationId: z.string().min(10),
   phone: z.string().or(z.number()),
@@ -259,6 +271,84 @@ export class ReservationService {
     };
   }
 
+  async listByDate(input) {
+    const data = listReservationsByDateSchema.parse(input);
+    validateReportDate(data.date);
+    const reservations = await this.getReservationsByDate(data.date, data.includeCancelled);
+    const summary = summarizeReservationCollection(reservations);
+    return {
+      ok: true,
+      code: reservations.length ? "RESERVATIONS_BY_DATE_FOUND" : "NO_RESERVATIONS_BY_DATE",
+      message: reservations.length
+        ? "Encontré reservas para esa fecha."
+        : "No encontré reservas para esa fecha.",
+      date: data.date,
+      includeCancelled: data.includeCancelled,
+      summary: {
+        date: data.date,
+        ...summary,
+      },
+      reservations,
+    };
+  }
+
+  async listRange(input) {
+    const data = listReservationsRangeSchema.parse(input);
+    validateReportDate(data.from);
+    validateReportDate(data.to);
+    if (data.from > data.to) {
+      throw new AppError(
+        "INVALID_DATE_RANGE",
+        "La fecha inicial debe ser menor o igual a la fecha final.",
+        { from: data.from, to: data.to },
+        400,
+      );
+    }
+
+    const dates = datesBetween(data.from, data.to);
+    if (dates.length > 31) {
+      throw new AppError(
+        "DATE_RANGE_TOO_LARGE",
+        "El rango máximo para consultas de reservas es de 31 días.",
+        { from: data.from, to: data.to, days: dates.length },
+        400,
+      );
+    }
+
+    const reportDays = await Promise.all(
+      dates.map(async (date) => {
+        const reservations = await this.getReservationsByDate(date, data.includeCancelled);
+        return {
+          date,
+          summary: summarizeReservationCollection(reservations),
+          reservations,
+        };
+      }),
+    );
+
+    const allReservations = reportDays.flatMap((day) => day.reservations);
+    const days = reportDays.map((day) => ({
+      date: day.date,
+      summary: day.summary,
+      ...(data.includeReservations ? { reservations: day.reservations } : {}),
+    }));
+
+    return {
+      ok: true,
+      code: allReservations.length ? "RESERVATIONS_RANGE_FOUND" : "NO_RESERVATIONS_RANGE",
+      message: allReservations.length
+        ? "Encontré reservas para ese rango."
+        : "No encontré reservas para ese rango.",
+      from: data.from,
+      to: data.to,
+      daysCount: dates.length,
+      includeCancelled: data.includeCancelled,
+      includeReservations: data.includeReservations,
+      summary: summarizeReservationCollection(allReservations),
+      days,
+    };
+  }
+
   async update(input) {
     const data = updateReservationSchema.parse(input);
     const phone = requirePhone(data.phone);
@@ -434,6 +524,13 @@ export class ReservationService {
       ) || reservation
     );
   }
+
+  async getReservationsByDate(date, includeCancelled = true) {
+    const response = await this.client.listReservations({ date });
+    return asArrayOrData(response.data)
+      .map(summarizeReservation)
+      .filter((reservation) => includeCancelled || !reservation.cancelled);
+  }
 }
 
 function largePartyResult() {
@@ -477,6 +574,17 @@ function validateDate(date) {
     throw new AppError("PAST_DATE", "No se pueden hacer reservas en fechas pasadas.", {
       date,
     });
+  }
+}
+
+function validateReportDate(date) {
+  if (!assertIsoDate(date)) {
+    throw new AppError(
+      "INVALID_DATE",
+      "La fecha debe venir en formato YYYY-MM-DD y ser una fecha real.",
+      { date },
+      400,
+    );
   }
 }
 
@@ -544,6 +652,16 @@ function normalizeZoneInput(value) {
   }
 }
 
+function normalizeBooleanInput(value) {
+  if (value === undefined || value === null || value === "") return value;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  const key = String(value).trim().toLowerCase();
+  if (["true", "1", "yes", "si", "sí"].includes(key)) return true;
+  if (["false", "0", "no"].includes(key)) return false;
+  return value;
+}
+
 function asArray(data) {
   return Array.isArray(data) ? data : [];
 }
@@ -566,6 +684,7 @@ function normalizeSlot(slot) {
 }
 
 function summarizeReservation(reservation) {
+  const cancelled = isCancelled(reservation);
   return {
     id: reservation.id_reservation || reservation.reservationId,
     displayName: reservation.displayName,
@@ -575,7 +694,11 @@ function summarizeReservation(reservation) {
     date: reservation.fecha || reservation.fechaCompleta?.slice(0, 10),
     dateTime: reservation.fechaCompleta,
     status: reservation.status,
+    codeStatus: reservation.codeStatus ?? null,
+    cancelled,
     isUserConfirmed: reservation.isUserConfirmed || null,
+    tableId: reservation.tableId || reservation.intuiposId || null,
+    comments: reservation.comments || reservation.vendorComments || null,
   };
 }
 
@@ -594,6 +717,54 @@ function summarizeCreatedReservation(reservation, payload = {}) {
 
 function isCancelled(reservation) {
   return Boolean(reservation.isCancelled) || reservation.status === "Cancelada";
+}
+
+function summarizeReservationCollection(reservations) {
+  const summary = {
+    totalReservations: reservations.length,
+    activeReservations: 0,
+    cancelledReservations: 0,
+    totalPeople: 0,
+    activePeople: 0,
+    cancelledPeople: 0,
+    statusCounts: {},
+  };
+
+  for (const reservation of reservations) {
+    const people = Number.isFinite(reservation.people) ? reservation.people : 0;
+    summary.totalPeople += people;
+    const status = reservation.status || "unknown";
+    summary.statusCounts[status] = (summary.statusCounts[status] || 0) + 1;
+    if (reservation.cancelled) {
+      summary.cancelledReservations += 1;
+      summary.cancelledPeople += people;
+    } else {
+      summary.activeReservations += 1;
+      summary.activePeople += people;
+    }
+  }
+
+  return summary;
+}
+
+function datesBetween(from, to) {
+  const dates = [];
+  const current = parseIsoDateUtc(from);
+  const end = parseIsoDateUtc(to);
+  while (current <= end) {
+    dates.push(formatIsoDateUtc(current));
+    current.setUTCDate(current.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+function parseIsoDateUtc(date) {
+  const [year, month, day] = date.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function formatIsoDateUtc(date) {
+  return date.toISOString().slice(0, 10);
 }
 
 function ensurePrecomproSuccess(response, fallbackCode) {

@@ -329,3 +329,191 @@ describe("ReservationService.availability", () => {
     expect(client.getAvailability).not.toHaveBeenCalled();
   });
 });
+
+describe("ReservationService reporting", () => {
+  function buildService(client) {
+    return new ReservationService({
+      client,
+      config,
+      lock: new InMemoryLock(),
+      idempotency: new IdempotencyStore(),
+    });
+  }
+
+  it("lists reservations by date with active and cancelled summaries separated", async () => {
+    const client = {
+      listReservations: vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        data: [
+          reservationForReport({
+            id: "active-1",
+            people: 2,
+            status: "Sin Reconfirmar",
+          }),
+          reservationForReport({
+            id: "cancelled-1",
+            people: 4,
+            status: "Cancelada",
+            isCancelled: true,
+          }),
+        ],
+      })),
+    };
+    const service = buildService(client);
+
+    const result = await service.listByDate({ date: "2026-06-15" });
+
+    expect(client.listReservations).toHaveBeenCalledWith({ date: "2026-06-15" });
+    expect(result).toMatchObject({
+      ok: true,
+      code: "RESERVATIONS_BY_DATE_FOUND",
+      summary: {
+        date: "2026-06-15",
+        totalReservations: 2,
+        activeReservations: 1,
+        cancelledReservations: 1,
+        totalPeople: 6,
+        activePeople: 2,
+        cancelledPeople: 4,
+      },
+    });
+    expect(result.reservations).toHaveLength(2);
+  });
+
+  it("can exclude cancelled reservations from date reports", async () => {
+    const client = {
+      listReservations: vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        data: [
+          reservationForReport({ id: "active-1", people: 2 }),
+          reservationForReport({
+            id: "cancelled-1",
+            people: 4,
+            status: "Cancelada",
+            isCancelled: true,
+          }),
+        ],
+      })),
+    };
+    const service = buildService(client);
+
+    const result = await service.listByDate({
+      date: "2026-06-15",
+      includeCancelled: false,
+    });
+
+    expect(result.summary).toMatchObject({
+      totalReservations: 1,
+      activeReservations: 1,
+      cancelledReservations: 0,
+      totalPeople: 2,
+      activePeople: 2,
+      cancelledPeople: 0,
+    });
+    expect(result.reservations).toHaveLength(1);
+  });
+
+  it("summarizes reservation ranges even when reservation details are omitted", async () => {
+    const byDate = {
+      "2026-06-15": [
+        reservationForReport({ id: "d1-active", people: 2 }),
+        reservationForReport({
+          id: "d1-cancelled",
+          people: 3,
+          status: "Cancelada",
+          isCancelled: true,
+        }),
+      ],
+      "2026-06-16": [reservationForReport({ id: "d2-active", people: 5 })],
+    };
+    const client = {
+      listReservations: vi.fn(async ({ date }) => ({
+        ok: true,
+        status: 200,
+        data: byDate[date] || [],
+      })),
+    };
+    const service = buildService(client);
+
+    const result = await service.listRange({
+      from: "2026-06-15",
+      to: "2026-06-16",
+      includeReservations: false,
+    });
+
+    expect(client.listReservations).toHaveBeenNthCalledWith(1, { date: "2026-06-15" });
+    expect(client.listReservations).toHaveBeenNthCalledWith(2, { date: "2026-06-16" });
+    expect(result).toMatchObject({
+      ok: true,
+      code: "RESERVATIONS_RANGE_FOUND",
+      daysCount: 2,
+      includeReservations: false,
+      summary: {
+        totalReservations: 3,
+        activeReservations: 2,
+        cancelledReservations: 1,
+        totalPeople: 10,
+        activePeople: 7,
+        cancelledPeople: 3,
+      },
+      days: [
+        {
+          date: "2026-06-15",
+          summary: {
+            totalReservations: 2,
+            activeReservations: 1,
+            cancelledReservations: 1,
+            totalPeople: 5,
+            activePeople: 2,
+            cancelledPeople: 3,
+          },
+        },
+        {
+          date: "2026-06-16",
+          summary: {
+            totalReservations: 1,
+            activeReservations: 1,
+            cancelledReservations: 0,
+            totalPeople: 5,
+            activePeople: 5,
+            cancelledPeople: 0,
+          },
+        },
+      ],
+    });
+    expect(result.days[0]).not.toHaveProperty("reservations");
+    expect(result.days[1]).not.toHaveProperty("reservations");
+  });
+
+  it("rejects reservation ranges over 31 days", async () => {
+    const service = buildService({ listReservations: vi.fn() });
+
+    await expect(
+      service.listRange({ from: "2026-06-01", to: "2026-07-02" }),
+    ).rejects.toMatchObject({
+      code: "DATE_RANGE_TOO_LARGE",
+      statusCode: 400,
+    });
+  });
+});
+
+function reservationForReport({
+  id,
+  people,
+  status = "Sin Reconfirmar",
+  isCancelled = false,
+}) {
+  return {
+    id_reservation: id,
+    displayName: "Maria Perez",
+    phone: 3142360112,
+    people,
+    date: bogotaDateTimeToEpochMs("2026-06-15", "12:00"),
+    fecha: "2026-06-15",
+    fechaCompleta: "2026-06-15 12:00:00",
+    status,
+    isCancelled,
+  };
+}

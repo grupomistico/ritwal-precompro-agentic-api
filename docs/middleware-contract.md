@@ -110,6 +110,97 @@ Input:
 
 Returns active reservations by phone.
 
+### `POST /tools/reservations/list-date`
+
+Read-only endpoint for reservation reports by service date. It calls
+Precompro `reservation/list` from the server IP and returns normalized
+reservations plus summary counters.
+
+Input:
+
+```json
+{
+  "date": "2026-06-15",
+  "includeCancelled": true
+}
+```
+
+Output:
+
+```json
+{
+  "ok": true,
+  "code": "RESERVATIONS_BY_DATE_FOUND",
+  "date": "2026-06-15",
+  "includeCancelled": true,
+  "summary": {
+    "date": "2026-06-15",
+    "totalReservations": 10,
+    "activeReservations": 8,
+    "cancelledReservations": 2,
+    "totalPeople": 34,
+    "activePeople": 27,
+    "cancelledPeople": 7,
+    "statusCounts": {}
+  },
+  "reservations": []
+}
+```
+
+For operational questions like "cuantas reservas hubo" or "cuantas personas
+trajo", agents should use `activeReservations` and `activePeople` unless the
+user explicitly asks to include cancellations.
+
+### `POST /tools/reservations/list-range`
+
+Read-only endpoint for date range reports. The range is inclusive and capped at
+31 days so the agent can answer weekly and monthly-light questions without
+pulling unbounded data.
+
+Input:
+
+```json
+{
+  "from": "2026-06-15",
+  "to": "2026-06-19",
+  "includeCancelled": true,
+  "includeReservations": false
+}
+```
+
+Output:
+
+```json
+{
+  "ok": true,
+  "code": "RESERVATIONS_RANGE_FOUND",
+  "from": "2026-06-15",
+  "to": "2026-06-19",
+  "daysCount": 5,
+  "includeCancelled": true,
+  "includeReservations": false,
+  "summary": {
+    "totalReservations": 42,
+    "activeReservations": 35,
+    "cancelledReservations": 7,
+    "totalPeople": 126,
+    "activePeople": 103,
+    "cancelledPeople": 23,
+    "statusCounts": {}
+  },
+  "days": [
+    {
+      "date": "2026-06-15",
+      "summary": {}
+    }
+  ]
+}
+```
+
+Agents should calculate relative date phrases, such as "semana pasada de lunes
+a viernes", into exact `YYYY-MM-DD` dates in `America/Bogota` before calling
+this endpoint.
+
 ### `POST /tools/reservations/update`
 
 Input:
@@ -178,6 +269,6 @@ that should be copied into Convocore when we register the agent.
 - Groups of 19+ return `ESCALATE_LARGE_PARTY` and should go to a human.
 - `cancel` and `confirm` can receive `phone`; when present, the middleware
   verifies the reservation belongs to that phone before calling Precompro.
-- The Precompro `apiKey` rotates every 30 days; update `PRECOMPRO_API_KEY`
-  before expiry and restart/redeploy the middleware.
+- The Precompro `apiKey` refresh process runs from Dokploy and refreshes before
+  the 20-day operational window expires.
 - Use a non-empty `TOOL_SECRET` before exposing this outside the local sandbox.
