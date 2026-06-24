@@ -148,6 +148,9 @@ El middleware normaliza:
 | `3pm` | `15:00` |
 | `"5"` | `5` |
 | `zone: 0` | Sin zona específica |
+| `Salon` / `Salón` | Zona `1442` |
+| `Templos` | Zona `1443` |
+| `Wine Garden` / `WINE GARDEN` / `jardin` | Zona `2190` |
 
 ## Contrato De Respuesta
 

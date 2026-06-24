@@ -736,7 +736,17 @@ function requireCountryCode(countryCode, fallback) {
 function normalizeZoneInput(value) {
   if (value === undefined || value === null || value === "") return undefined;
   if (typeof value === "number") return { id: value };
-  if (typeof value === "object") return value;
+  if (typeof value === "object") {
+    const zoneFromId = normalizeZoneInput(value.id);
+    if (zoneFromId?.id !== undefined) {
+      return { ...value, id: zoneFromId.id, name: value.name || zoneFromId.name };
+    }
+    const zoneFromName = normalizeZoneInput(value.name);
+    if (zoneFromName?.id !== undefined) {
+      return { ...value, ...zoneFromName };
+    }
+    return value;
+  }
   if (typeof value !== "string") return undefined;
 
   const trimmed = value.trim();
@@ -751,6 +761,9 @@ function normalizeZoneInput(value) {
       .toLowerCase();
     if (key.includes("salon")) return { id: 1442, name: "Salón" };
     if (key.includes("templo")) return { id: 1443, name: "Templos" };
+    if (key.includes("wine") || key.includes("garden") || key.includes("jardin")) {
+      return { id: 2190, name: "WINE GARDEN" };
+    }
     if (/^\d+$/.test(trimmed)) return { id: Number(trimmed) };
     return undefined;
   }

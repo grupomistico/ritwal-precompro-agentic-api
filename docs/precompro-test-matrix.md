@@ -18,7 +18,7 @@ Goal: map the API behavior deeply enough to build a reliable agentic frontdesk.
 
 - Sections
   - Confirm available sections and whether subzones are required.
-  - Current Ritwal sections: `Salón` id `1442`, `Templos` id `1443`.
+  - Current Ritwal sections: `Salón` id `1442`, `Templos` id `1443`, `WINE GARDEN` id `2190`.
 
 - Availability by date
   - Sweep the next 14-30 days.
@@ -40,7 +40,7 @@ Goal: map the API behavior deeply enough to build a reliable agentic frontdesk.
 
 - Availability by zone
   - Test default `zone=0`.
-  - Test `zone=1442` and `zone=1443`, despite `isActiveSelectedZone=0`, to see whether the API ignores or applies zone.
+  - Test `zone=1442`, `zone=1443`, and `zone=2190`, despite `isActiveSelectedZone=0`, to see whether the API ignores or applies zone.
   - Result on 2026-05-05: availability respects `zone`. Small parties are available in `Salón` (`1442`), while large parties are available in `Templos` (`1443`).
 
 - Paid slots

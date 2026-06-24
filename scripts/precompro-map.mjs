@@ -9,7 +9,7 @@ const availabilityBase =
   env.PRECOMPRO_AVAILABILITY_BASE || "https://serviceavailability.precompro.co/api";
 const days = numberEnv("MAP_DAYS", 14);
 const peopleValues = listEnv("MAP_PEOPLE", [1, 2, 4, 6, 8, 10, 12]);
-const zoneValues = listEnv("MAP_ZONES", [0, 1442, 1443]);
+const zoneValues = listEnv("MAP_ZONES", [0, 1442, 1443, 2190]);
 const subzone = numberEnv("MAP_SUBZONE", 0);
 const summaryOnly = env.MAP_SUMMARY === "true";
 

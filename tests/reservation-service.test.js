@@ -134,25 +134,31 @@ describe("ReservationService.create", () => {
     expect(client.createReservation).toHaveBeenCalledOnce();
   });
 
-  it("accepts zone names from tool callers", async () => {
+  it.each([
+    ["Salon", 1442, "Salón"],
+    ["WINE GARDEN", 2190, "WINE GARDEN"],
+    ["jardin", 2190, "WINE GARDEN"],
+    [{ name: "Wine Garden" }, 2190, "WINE GARDEN"],
+    [{ id: "2190", name: "Wine Garden" }, 2190, "Wine Garden"],
+  ])("accepts zone input %j from tool callers", async (zone, zoneId, zoneName) => {
     const result = await service.availability({
       date: TEST_DATE,
       partySize: 2,
-      zone: "Salon",
+      zone,
     });
 
     expect(result).toMatchObject({
       ok: true,
       code: "AVAILABILITY_FOUND",
       zone: {
-        id: 1442,
-        name: "Salón",
+        id: zoneId,
+        name: zoneName,
       },
     });
     expect(client.getAvailability).toHaveBeenCalledWith({
       people: 2,
       date: TEST_DATE,
-      zone: 1442,
+      zone: zoneId,
       subzone: 0,
     });
   });

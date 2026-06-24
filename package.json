@@ -8,6 +8,7 @@
     "start": "node src/server.js",
     "test": "vitest run",
     "precompro": "node scripts/precompro-smoke.mjs",
+    "precompro:tool": "node scripts/openclaw-tool-call.mjs",
     "precompro:read": "node scripts/precompro-smoke.mjs read",
     "precompro:availability": "node scripts/precompro-smoke.mjs availability",
     "precompro:list-date": "node scripts/precompro-smoke.mjs list-date",

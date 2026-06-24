@@ -60,7 +60,7 @@ Accepted convenience inputs from tool callers:
 - `date`: strict `YYYY-MM-DD`, `hoy`, `mañana`/`manana`, or `pasado mañana`.
 - `time`: strict `HH:mm` or simple AM/PM forms like `3pm`.
 - `partySize`: number or numeric string.
-- `zone`: omit, `0`, a section id, a section name, or `{ "id": 1442, "name": "Salón" }`.
+- `zone`: omit, `0`, a section id, a section name, or `{ "id": 1442, "name": "Salón" }`. Current Ritwal shortcuts: `Salon`/`Salón` -> `1442`, `Templos` -> `1443`, `Wine Garden`/`WINE GARDEN`/`jardin` -> `2190`.
 
 Output:
 

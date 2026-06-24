@@ -63,6 +63,7 @@ También normaliza entradas humanas frecuentes:
 - `3pm` a `15:00`
 - `"5"` a `5`
 - `zone: 0` u omitir zona para consultar disponibilidad sin zona específica
+- `Salon`/`Salón` a `1442`, `Templos` a `1443`, `Wine Garden`/`WINE GARDEN`/`jardin` a `2190`
 
 ## Safety Rules
 
