@@ -14,6 +14,7 @@
     "precompro:list-date": "node scripts/precompro-smoke.mjs list-date",
     "precompro:map": "node scripts/precompro-map.mjs",
     "precompro:refresh-key": "node scripts/refresh-precompro-key.mjs",
+    "precompro:verify-key": "node scripts/refresh-precompro-key.mjs --verify-only",
     "smoke:production": "node scripts/production-smoke.mjs",
     "deploy:dokploy": "node scripts/deploy-dokploy.mjs"
   },
